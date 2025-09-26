@@ -1,10 +1,11 @@
 mod jvm;
-
-const MC: &[u8] = include_bytes!("../../mc2/MasaoConstruction.class");
+mod res;
 
 fn main() -> anyhow::Result<()> {
-    let cls = jvm::parse_class_file(MC)?;
-    println!("{cls:?}");
+    for (_name, bin) in res::MC_CLASS_FILES {
+        let cls = jvm::parse_class_file(bin)?;
+        println!("{cls:?}");
+    }
 
     Ok(())
 }
