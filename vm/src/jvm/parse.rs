@@ -1,6 +1,6 @@
 // https://docs.oracle.com/javase/specs/jvms/se6/html/VMSpecTOC.doc.html
 
-use anyhow::Context;
+use anyhow::{Context, ensure};
 use bytes::Buf;
 use std::rc::Rc;
 
@@ -41,9 +41,9 @@ ClassFile {
 }
 Attributes: SourceFile, Synthetic, Deprecated, InnerClasses?
 */
-pub fn parse_class_file(mut p: &[u8]) -> anyhow::Result<()> {
+pub fn parse_class_file(mut p: &[u8]) -> anyhow::Result<JClass> {
     let magic = p.try_get_u32()?;
-    assert_eq!(magic, 0xcafebabe);
+    anyhow::ensure!(magic == 0xcafebabe, "bad magic");
 
     let minor_version = p.try_get_u16()?;
     let major_version = p.try_get_u16()?;
@@ -54,27 +54,45 @@ pub fn parse_class_file(mut p: &[u8]) -> anyhow::Result<()> {
 
     let access_flags = p.try_get_u16()?;
     println!("ACC: {access_flags}");
-    let _this_class = p.try_get_u16()?;
-    let _super_class = p.try_get_u16()?;
+
+    // must not 0
+    let this_class = p.try_get_u16()?;
+    let this_class = cp.get_class(this_class)?;
+    println!("this_class: {this_class}");
+    // 0 only if java.lang.Object
+    // we won't load java.lang.Object from class file
+    // (will use native implementation)
+    let super_class = p.try_get_u16()?;
+    let super_class = Some(cp.get_class(super_class)?);
+    println!("super_class: {}", super_class.as_ref().unwrap());
 
     let interfaces_count = p.try_get_u16()?;
     println!("interfaces_count: {interfaces_count}");
+    let mut interfaces = Vec::with_capacity(interfaces_count as usize);
     for _i in 0..interfaces_count {
-        let _if = p.try_get_u16()?;
+        let iface = p.try_get_u16()?;
+        let iface = cp.get_class(iface)?;
+        interfaces.push(iface);
     }
 
     let fields;
     (p, fields) = parse_fields(p, &cp)?;
     let methods;
     (p, methods) = parse_methods(p, &cp)?;
-    println!("{fields:?}");
-    println!("{methods:?}");
 
     (p, _) = parse_attributes(p, &cp)?;
 
     anyhow::ensure!(p.is_empty(), "trailing data: {} bytes", p.len());
 
-    Ok(())
+    Ok(JClass {
+        constant_pool: cp,
+        access_flags,
+        this_class,
+        super_class,
+        interfaces,
+        fields,
+        methods,
+    })
 }
 
 /*
@@ -392,6 +410,14 @@ impl ConstantPool {
             Ok(Rc::clone(bytes))
         } else {
             anyhow::bail!("#{idx} is not Utf8");
+        }
+    }
+
+    fn get_class(&self, idx: u16) -> anyhow::Result<Rc<String>> {
+        if let ConstInfo::Class { name } = self.get(idx)? {
+            Ok(Rc::clone(name))
+        } else {
+            anyhow::bail!("#{idx} is not Class");
         }
     }
 }

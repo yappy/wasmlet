@@ -20,6 +20,18 @@ mod acc {
 }
 
 #[derive(Debug)]
+pub struct JClass {
+    constant_pool: ConstantPool,
+    access_flags: u16,
+    this_class: Rc<String>,
+    super_class: Option<Rc<String>>,
+    interfaces: Vec<Rc<String>>,
+    fields: Vec<FieldInfo>,
+    methods: Vec<MethodInfo>,
+    // attributes
+}
+
+#[derive(Debug)]
 struct ConstantPool {
     pool: Vec<ConstInfo>,
 }
@@ -91,13 +103,23 @@ enum Attribute {
     Code(Code),
 }
 
-#[derive(Debug)]
 struct Code {
     max_stack: u16,
     max_locals: u16,
     code: Vec<u8>,
     exception_table: Vec<ExceptionTableEntry>,
     // attributes
+}
+
+impl std::fmt::Debug for Code {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Code")
+            .field("max_stack", &self.max_stack)
+            .field("max_locals", &self.max_locals)
+            .field("code_len", &self.code.len())
+            .field("exception_table", &self.exception_table)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
