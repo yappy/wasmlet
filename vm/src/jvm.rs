@@ -1,9 +1,11 @@
+mod jvm_impl;
 mod parse;
 
-use std::rc::Rc;
+use std::{collections::HashMap, rc::Rc};
 
-// re-export
-pub use parse::parse_class_file;
+pub struct JVM {
+    classes: HashMap<String, JClass>,
+}
 
 #[allow(dead_code)]
 mod acc {
@@ -19,6 +21,7 @@ mod acc {
     pub const ABSTRACT: u16 = 0x0400;
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct JClass {
     constant_pool: ConstantPool,
@@ -26,8 +29,8 @@ pub struct JClass {
     this_class: Rc<String>,
     super_class: Option<Rc<String>>,
     interfaces: Vec<Rc<String>>,
-    fields: Vec<FieldInfo>,
-    methods: Vec<MethodInfo>,
+    fields: HashMap<String, FieldInfo>,
+    methods: HashMap<String, MethodInfo>,
     // attributes
 }
 
@@ -82,18 +85,20 @@ enum ConstInfo {
 }
 
 #[derive(Debug)]
-struct FieldInfo {
+pub struct FieldInfo {
     access_flags: u16,
     name: Rc<String>,
     descriptor: Rc<String>,
+    name_desc: String,
     // attributes
 }
 
 #[derive(Debug)]
-struct MethodInfo {
+pub struct MethodInfo {
     access_flags: u16,
     name: Rc<String>,
     descriptor: Rc<String>,
+    name_desc: String,
     // attributes
     code: Option<Code>,
 }

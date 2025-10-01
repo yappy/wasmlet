@@ -84,6 +84,16 @@ pub fn parse_class_file(mut p: &[u8]) -> anyhow::Result<JClass> {
 
     anyhow::ensure!(p.is_empty(), "trailing data: {} bytes", p.len());
 
+    // create HashMap for fields and methods
+    let fields = fields
+        .into_iter()
+        .map(|f| (f.name_desc.clone(), f))
+        .collect();
+    let methods = methods
+        .into_iter()
+        .map(|m| (m.name_desc.clone(), m))
+        .collect();
+
     Ok(JClass {
         constant_pool: cp,
         access_flags,
@@ -444,10 +454,15 @@ fn parse_fields<'a>(
         let name_index = p.try_get_u16()?;
         let descriptor_index = p.try_get_u16()?;
         (p, _) = parse_attributes(p, cp)?;
+
+        let name = cp.get_utf8(name_index)?;
+        let descriptor = cp.get_utf8(descriptor_index)?;
+        let name_desc = format!("{name}{descriptor}");
         fields.push(FieldInfo {
             access_flags,
-            name: cp.get_utf8(name_index)?,
-            descriptor: cp.get_utf8(descriptor_index)?,
+            name,
+            descriptor,
+            name_desc,
         });
     }
 
@@ -484,10 +499,15 @@ fn parse_methods<'a>(
                 code = Some(c);
             }
         }
+
+        let name = cp.get_utf8(name_index)?;
+        let descriptor = cp.get_utf8(descriptor_index)?;
+        let name_desc = format!("{name}{descriptor}");
         methods.push(MethodInfo {
             access_flags,
-            name: cp.get_utf8(name_index)?,
-            descriptor: cp.get_utf8(descriptor_index)?,
+            name,
+            descriptor,
+            name_desc,
             code,
         });
     }
