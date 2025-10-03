@@ -1,6 +1,6 @@
 // https://docs.oracle.com/javase/specs/jvms/se6/html/VMSpecTOC.doc.html
 
-use anyhow::{Context, ensure};
+use anyhow::Context;
 use bytes::Buf;
 use std::rc::Rc;
 

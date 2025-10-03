@@ -1,7 +1,10 @@
 mod jvm_impl;
+mod op;
 mod parse;
 
 use std::{collections::HashMap, rc::Rc};
+
+pub use op::next_op;
 
 pub struct JVM {
     classes: HashMap<String, JClass>,
@@ -100,7 +103,7 @@ pub struct MethodInfo {
     descriptor: Rc<String>,
     name_desc: String,
     // attributes
-    code: Option<Code>,
+    pub code: Option<Code>,
 }
 
 #[derive(Debug)]
@@ -108,11 +111,11 @@ enum Attribute {
     Code(Code),
 }
 
-struct Code {
-    max_stack: u16,
-    max_locals: u16,
-    code: Vec<u8>,
-    exception_table: Vec<ExceptionTableEntry>,
+pub struct Code {
+    pub max_stack: u16,
+    pub max_locals: u16,
+    pub code: Vec<u8>,
+    pub exception_table: Vec<ExceptionTableEntry>,
     // attributes
 }
 
@@ -128,9 +131,9 @@ impl std::fmt::Debug for Code {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct ExceptionTableEntry {
-    start_pc: u16,
-    end_pc: u16,
-    handler_pc: u16,
-    catch_type: u16,
+pub struct ExceptionTableEntry {
+    pub start_pc: u16,
+    pub end_pc: u16,
+    pub handler_pc: u16,
+    pub catch_type: u16,
 }
