@@ -1,10 +1,15 @@
 use anyhow::{Context, Ok};
 use bytes::Buf;
 
+// https://docs.oracle.com/javase/specs/jvms/se7/html/jvms-6.html
+
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum Op {
+    /// Do nothing.
     Nop,
+    /// Push null.
+    /// ... -> ..., null
     AconstNull,
     IconstM1,
     Iconst0,
@@ -273,8 +278,12 @@ pub enum Op {
     Invokevirtual {
         index: u16,
     },
+    /// Invoke instance method; special handling for superclass, private,
+    /// and instance initialization method invocations.
+    /// objectref, [arg1, [arg2 ...]] -> ...
     Invokespecial {
-        index: u8,
+        /// cp[index] must be a method reference
+        index: u16,
     },
     Invokestatic {
         index: u16,
@@ -342,7 +351,7 @@ pub fn next_op(mut bcode: &[u8]) -> anyhow::Result<(Op, &[u8])> {
             Op::Getstatic { index }
         }
         0xb7 => {
-            let index = bcode.try_get_u8().context("invalid op")?;
+            let index = bcode.try_get_u16().context("invalid op")?;
             Op::Invokespecial { index }
         }
         _ => anyhow::bail!("unsupported opcode: 0x{opcode:02x}"),
