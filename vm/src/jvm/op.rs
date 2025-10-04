@@ -344,11 +344,21 @@ pub fn next_op(mut bcode: &[u8]) -> anyhow::Result<(Op, &[u8])> {
         0x10 => Op::Bipush {
             byte: bcode.try_get_u8().context("invalid op")?,
         },
+        0x12 => Op::Ldc {
+            index: bcode.try_get_u8().context("invalid op")?,
+        },
         0x2a => Op::Aload0,
         0xb1 => Op::Return,
+        0xb2 => Op::Getstatic {
+            index: bcode.try_get_u16().context("invalid op")?,
+        },
         0xb5 => {
             let index = bcode.try_get_u16().context("invalid op")?;
             Op::Getstatic { index }
+        }
+        0xb6 => {
+            let index = bcode.try_get_u16().context("invalid op")?;
+            Op::Invokevirtual { index }
         }
         0xb7 => {
             let index = bcode.try_get_u16().context("invalid op")?;

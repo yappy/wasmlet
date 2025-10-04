@@ -1,21 +1,23 @@
-// ("name", include_bytes!("dir/" + "name" + ".class"))
+// ("name", include_bytes!(dir + "/" + name + ".class"))
 macro_rules! mc_name_bin {
-    ($name:expr) => {
+    ($dir:expr, $name:expr) => {
         (
             $name,
-            include_bytes!(concat!("../../mc2/", $name, ".class")),
+            include_bytes!(concat!("../../", $dir, "/", $name, ".class")),
         )
     };
 }
 
 pub const MC_CLASS_FILES: &[(&str, &[u8])] = &[
-    mc_name_bin!("CharacterObject"),
-    mc_name_bin!("GameGraphics"),
-    mc_name_bin!("GameKey"),
-    mc_name_bin!("GameMouse"),
-    mc_name_bin!("IdouGamen"),
-    mc_name_bin!("KeyboardMenu"),
-    mc_name_bin!("MainProgram"),
-    mc_name_bin!("MapSystem"),
-    mc_name_bin!("MasaoConstruction"),
+    mc_name_bin!("mc2", "CharacterObject"),
+    mc_name_bin!("mc2", "GameGraphics"),
+    mc_name_bin!("mc2", "GameKey"),
+    mc_name_bin!("mc2", "GameMouse"),
+    mc_name_bin!("mc2", "IdouGamen"),
+    mc_name_bin!("mc2", "KeyboardMenu"),
+    mc_name_bin!("mc2", "MainProgram"),
+    mc_name_bin!("mc2", "MapSystem"),
+    mc_name_bin!("mc2", "MasaoConstruction"),
 ];
+
+pub const SAMPLE_CLASS_FILES: &[(&str, &[u8])] = &[mc_name_bin!("jsample", "Hello")];

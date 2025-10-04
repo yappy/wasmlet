@@ -7,6 +7,7 @@ impl JVM {
     pub fn new() -> Self {
         Self {
             classes: HashMap::new(),
+            threads: Vec::new(),
         }
     }
 

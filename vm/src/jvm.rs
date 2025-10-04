@@ -8,6 +8,25 @@ pub use op::next_op;
 
 pub struct JVM {
     classes: HashMap<String, JClass>,
+    threads: Vec<JThreadContext>,
+}
+
+pub struct JThreadContext {
+    stack_frames: Vec<JStackFrame>,
+}
+
+struct JStackFrame {
+    pc: usize,
+    local_vars: Vec<JValue>,
+    operand_stack: Vec<JValue>,
+}
+
+enum JValue {
+    Int(i32),
+    Float(f32),
+    Long(i64),
+    Double(f64),
+    //Ref(Option<Rc<JObject>>),
 }
 
 #[allow(dead_code)]
