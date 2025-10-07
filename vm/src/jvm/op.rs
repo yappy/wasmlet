@@ -341,13 +341,27 @@ pub fn next_op(mut bcode: &[u8]) -> anyhow::Result<(Op, &[u8])> {
     let op = match opcode {
         0x00 => Op::Nop,
         0x01 => Op::AconstNull,
+        0x03 => Op::Iconst0,
         0x10 => Op::Bipush {
             byte: bcode.try_get_u8().context("invalid op")?,
         },
         0x12 => Op::Ldc {
             index: bcode.try_get_u8().context("invalid op")?,
         },
+        0x1b => Op::Iload1,
         0x2a => Op::Aload0,
+        0x32 => Op::Aaload,
+        0x3c => Op::Astore1,
+        0x84 => Op::Iinc {
+            index: bcode.try_get_u8().context("invalid op")?,
+            constant: bcode.try_get_i8().context("invalid op")?,
+        },
+        0xa2 => Op::IfIcmpge {
+            branch: bcode.try_get_i16().context("invalid op")?,
+        },
+        0xa7 => Op::Goto {
+            branch: bcode.try_get_i16().context("invalid op")?,
+        },
         0xb1 => Op::Return,
         0xb2 => Op::Getstatic {
             index: bcode.try_get_u16().context("invalid op")?,
@@ -364,6 +378,7 @@ pub fn next_op(mut bcode: &[u8]) -> anyhow::Result<(Op, &[u8])> {
             let index = bcode.try_get_u16().context("invalid op")?;
             Op::Invokespecial { index }
         }
+        0xbe => Op::Arraylength,
         _ => anyhow::bail!("unsupported opcode: 0x{opcode:02x}"),
     };
 

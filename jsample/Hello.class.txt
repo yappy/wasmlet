@@ -1,6 +1,6 @@
 Classfile /home/yappy/wasmlet/jsample/Hello.class
-  Last modified Oct 4, 2025; size 417 bytes
-  SHA-256 checksum 8c29542e3615ed564ea8a730b2614650a9f77dc7e2d6c312f8ee68a20057f78e
+  Last modified Oct 5, 2025; size 483 bytes
+  SHA-256 checksum eeff1773d4d9175e6d025cf8645a5c4c059c3070dd2ed64834e7dd71d1b5167c
   Compiled from "Hello.java"
 public class Hello
   minor version: 0
@@ -36,8 +36,9 @@ Constant pool:
   #24 = Utf8               LineNumberTable
   #25 = Utf8               main
   #26 = Utf8               ([Ljava/lang/String;)V
-  #27 = Utf8               SourceFile
-  #28 = Utf8               Hello.java
+  #27 = Utf8               StackMapTable
+  #28 = Utf8               SourceFile
+  #29 = Utf8               Hello.java
 {
   public Hello();
     descriptor: ()V
@@ -54,13 +55,35 @@ Constant pool:
     descriptor: ([Ljava/lang/String;)V
     flags: (0x0009) ACC_PUBLIC, ACC_STATIC
     Code:
-      stack=2, locals=1, args_size=1
+      stack=3, locals=2, args_size=1
          0: getstatic     #7                  // Field java/lang/System.out:Ljava/io/PrintStream;
          3: ldc           #13                 // String Hello, world!
          5: invokevirtual #15                 // Method java/io/PrintStream.println:(Ljava/lang/String;)V
-         8: return
+         8: iconst_0
+         9: istore_1
+        10: iload_1
+        11: aload_0
+        12: arraylength
+        13: if_icmpge     31
+        16: getstatic     #7                  // Field java/lang/System.out:Ljava/io/PrintStream;
+        19: aload_0
+        20: iload_1
+        21: aaload
+        22: invokevirtual #15                 // Method java/io/PrintStream.println:(Ljava/lang/String;)V
+        25: iinc          1, 1
+        28: goto          10
+        31: return
       LineNumberTable:
         line 3: 0
         line 4: 8
+        line 5: 16
+        line 4: 25
+        line 7: 31
+      StackMapTable: number_of_entries = 2
+        frame_type = 252 /* append */
+          offset_delta = 10
+          locals = [ int ]
+        frame_type = 250 /* chop */
+          offset_delta = 20
 }
 SourceFile: "Hello.java"
