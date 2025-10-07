@@ -1,3 +1,4 @@
+mod desc;
 mod jvm_impl;
 mod op;
 mod parse;
