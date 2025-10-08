@@ -1,37 +1,11 @@
+use super::*;
+
 use anyhow::Context;
 
-#[derive(Debug, PartialEq, Eq)]
-struct JType {
-    array_dim: usize,
-    ctype: JComponentType,
-}
-
-impl JType {
-    fn scalar_of(ctype: JComponentType) -> Self {
-        Self {
-            array_dim: 0,
-            ctype,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-enum JComponentType {
-    Byte,
-    Char,
-    Double,
-    Float,
-    Int,
-    Long,
-    Short,
-    Boolean,
-    Object(String),
-}
-
 /// field_desc <EOF>
-fn parse_field_desc(s: &str) -> anyhow::Result<JType> {
+pub fn parse_field_desc(s: &str) -> anyhow::Result<JType> {
     let (jt, rem) = parse_field_desc_one(s)?;
-    anyhow::ensure!(rem.is_empty(), "invalid descriptor");
+    anyhow::ensure!(rem.is_empty(), "invalid descriptor {s}");
 
     Ok(jt)
 }
@@ -56,16 +30,18 @@ ComponentType:
 
 /// Returns (parsed, remaining)
 fn parse_field_desc_one(s: &str) -> anyhow::Result<(JType, &str)> {
+    let errfn = || format!("invalid field descriptor: {s}");
+
     let mut rem = s;
     let mut array_dim = 0;
     while rem.starts_with('[') {
         array_dim += 1;
-        anyhow::ensure!(array_dim <= 255, "invalid descriptor");
+        anyhow::ensure!(array_dim <= 255, "invalid field descriptor: {s}");
         rem = &rem[1..];
     }
 
-    let c = rem.chars().next().context("invalid descriptor")?;
-    anyhow::ensure!(c.len_utf8() == 1, "invalid descriptor");
+    let c = rem.chars().next().with_context(errfn)?;
+    anyhow::ensure!(c.len_utf8() == 1, "invalid field descriptor: {s}");
     rem = &rem[1..];
     let ctype = match c {
         'B' => JComponentType::Byte,
@@ -77,12 +53,12 @@ fn parse_field_desc_one(s: &str) -> anyhow::Result<(JType, &str)> {
         'S' => JComponentType::Short,
         'Z' => JComponentType::Boolean,
         'L' => {
-            let semi_idx = rem.find(';').context("invalid descriptor")?;
+            let semi_idx = rem.find(';').with_context(errfn)?;
             let clsname = rem[..semi_idx].to_string();
             rem = &rem[semi_idx + 1..];
             JComponentType::Object(clsname)
         }
-        _ => anyhow::bail!("invalid descriptor"),
+        _ => anyhow::bail!("invalid field descriptor: {s}"),
     };
 
     Ok((JType { array_dim, ctype }, rem))
@@ -100,12 +76,12 @@ VoidDescriptor:
     V
 */
 
-fn parse_method_desc(s: &str) -> anyhow::Result<(Vec<JType>, Option<JType>)> {
+pub fn parse_method_desc(s: &str) -> anyhow::Result<(Vec<JType>, Option<JType>)> {
     let mut params = Vec::new();
     let mut rem = s;
 
     // '('
-    anyhow::ensure!(rem.starts_with('('), "invalid method descriptor");
+    anyhow::ensure!(rem.starts_with('('), "invalid method descriptor: {s}");
     rem = &rem[1..];
 
     // FieldType* ')'
@@ -113,7 +89,7 @@ fn parse_method_desc(s: &str) -> anyhow::Result<(Vec<JType>, Option<JType>)> {
         // this + params.len() <= 255
         // if static method, params does not include this,
         // but we don't follow the spec strictly.
-        anyhow::ensure!(!params.len() < 255, "invalid method descriptor");
+        anyhow::ensure!(params.len() < 255, "invalid method descriptor: {s}");
         let (jt, r) = parse_field_desc_one(rem)?;
         rem = r;
         params.push(jt);
@@ -129,7 +105,7 @@ fn parse_method_desc(s: &str) -> anyhow::Result<(Vec<JType>, Option<JType>)> {
         rem = r;
         Some(jt)
     };
-    anyhow::ensure!(rem.is_empty(), "invalid method descriptor");
+    anyhow::ensure!(rem.is_empty(), "invalid method descriptor: {s}");
 
     Ok((params, ret))
 }

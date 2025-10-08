@@ -30,6 +30,34 @@ enum JValue {
     //Ref(Option<Rc<JObject>>),
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct JType {
+    array_dim: usize,
+    ctype: JComponentType,
+}
+
+impl JType {
+    fn scalar_of(ctype: JComponentType) -> Self {
+        Self {
+            array_dim: 0,
+            ctype,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum JComponentType {
+    Byte,
+    Char,
+    Double,
+    Float,
+    Int,
+    Long,
+    Short,
+    Boolean,
+    Object(String),
+}
+
 #[allow(dead_code)]
 mod acc {
     pub const PUBLIC: u16 = 0x0001;
@@ -124,6 +152,10 @@ pub struct MethodInfo {
     name_desc: String,
     // attributes
     pub code: Option<Code>,
+
+    // parsed
+    pub ret_type: Option<JType>,
+    pub param_types: Vec<JType>,
 }
 
 #[derive(Debug)]

@@ -1,10 +1,10 @@
 // https://docs.oracle.com/javase/specs/jvms/se6/html/VMSpecTOC.doc.html
 
+use super::*;
+
 use anyhow::Context;
 use bytes::Buf;
 use std::rc::Rc;
-
-use super::*;
 
 mod ctype {
     pub const CLASS: u8 = 7;
@@ -503,12 +503,15 @@ fn parse_methods<'a>(
         let name = cp.get_utf8(name_index)?;
         let descriptor = cp.get_utf8(descriptor_index)?;
         let name_desc = format!("{name}{descriptor}");
+        let (param_types, ret_type) = desc::parse_method_desc(&descriptor)?;
         methods.push(MethodInfo {
             access_flags,
             name,
             descriptor,
             name_desc,
             code,
+            ret_type,
+            param_types,
         });
     }
 
