@@ -1,9 +1,18 @@
-use anyhow::{Context, ensure};
+use anyhow::Context;
 
 #[derive(Debug, PartialEq, Eq)]
 struct JType {
     array_dim: usize,
-    jtype: JComponentType,
+    ctype: JComponentType,
+}
+
+impl JType {
+    fn scalar_of(ctype: JComponentType) -> Self {
+        Self {
+            array_dim: 0,
+            ctype,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -55,9 +64,9 @@ fn parse_field_desc_one(s: &str) -> anyhow::Result<(JType, &str)> {
     }
 
     let c = rem.chars().next().context("invalid descriptor")?;
-    ensure!(c.len_utf8() == 1, "invalid descriptor");
+    anyhow::ensure!(c.len_utf8() == 1, "invalid descriptor");
     rem = &rem[1..];
-    let jtype = match c {
+    let ctype = match c {
         'B' => JComponentType::Byte,
         'C' => JComponentType::Char,
         'D' => JComponentType::Double,
@@ -75,7 +84,7 @@ fn parse_field_desc_one(s: &str) -> anyhow::Result<(JType, &str)> {
         _ => anyhow::bail!("invalid descriptor"),
     };
 
-    Ok((JType { array_dim, jtype }, rem))
+    Ok((JType { array_dim, ctype }, rem))
 }
 
 /*
@@ -91,7 +100,33 @@ VoidDescriptor:
 */
 
 fn parse_method_desc(s: &str) -> anyhow::Result<(Vec<JType>, Option<JType>)> {
-    todo!()
+    let mut params = Vec::new();
+    let mut rem = s;
+
+    // '('
+    anyhow::ensure!(rem.starts_with('('), "invalid method descriptor");
+    rem = &rem[1..];
+
+    // FieldType* ')'
+    while !rem.starts_with(')') {
+        let (jt, r) = parse_field_desc_one(rem)?;
+        rem = r;
+        params.push(jt);
+    }
+    debug_assert!(rem.starts_with(')'));
+    rem = &rem[1..];
+
+    let ret = if rem.starts_with('V') {
+        rem = &rem[1..];
+        None
+    } else {
+        let (jt, r) = parse_field_desc_one(rem)?;
+        rem = r;
+        Some(jt)
+    };
+    anyhow::ensure!(rem.is_empty(), "invalid method descriptor");
+
+    Ok((params, ret))
 }
 
 mod test {
@@ -122,7 +157,38 @@ mod test {
         for (desc, exp_dim, exp_type) in cases {
             let jt = parse_field_desc(desc).unwrap();
             assert_eq!(jt.array_dim, exp_dim);
-            assert_eq!(jt.jtype, exp_type);
+            assert_eq!(jt.ctype, exp_type);
         }
+    }
+
+    #[test]
+    fn test_parse_method_desc() {
+        // Object m(int i, double d, Thread t);
+        let case = "(IDLjava/lang/Thread;)Ljava/lang/Object;";
+        let expected = (
+            vec![
+                JType::scalar_of(JComponentType::Int),
+                JType::scalar_of(JComponentType::Double),
+                JType::scalar_of(JComponentType::Object("java/lang/Thread".to_string())),
+            ],
+            Some(JType::scalar_of(JComponentType::Object(
+                "java/lang/Object".to_string(),
+            ))),
+        );
+        let actual = parse_method_desc(case).unwrap();
+        assert_eq!(actual, expected);
+
+        // void m(int i, double d, Thread t);
+        let case = "(IDLjava/lang/Thread;)V";
+        let expected = (
+            vec![
+                JType::scalar_of(JComponentType::Int),
+                JType::scalar_of(JComponentType::Double),
+                JType::scalar_of(JComponentType::Object("java/lang/Thread".to_string())),
+            ],
+            None,
+        );
+        let actual = parse_method_desc(case).unwrap();
+        assert_eq!(actual, expected);
     }
 }
