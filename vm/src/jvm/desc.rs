@@ -60,6 +60,7 @@ fn parse_field_desc_one(s: &str) -> anyhow::Result<(JType, &str)> {
     let mut array_dim = 0;
     while rem.starts_with('[') {
         array_dim += 1;
+        anyhow::ensure!(array_dim <= 255, "invalid descriptor");
         rem = &rem[1..];
     }
 
@@ -109,6 +110,10 @@ fn parse_method_desc(s: &str) -> anyhow::Result<(Vec<JType>, Option<JType>)> {
 
     // FieldType* ')'
     while !rem.starts_with(')') {
+        // this + params.len() <= 255
+        // if static method, params does not include this,
+        // but we don't follow the spec strictly.
+        anyhow::ensure!(!params.len() < 255, "invalid method descriptor");
         let (jt, r) = parse_field_desc_one(rem)?;
         rem = r;
         params.push(jt);
