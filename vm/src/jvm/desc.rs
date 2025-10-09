@@ -110,6 +110,7 @@ pub fn parse_method_desc(s: &str) -> anyhow::Result<(Vec<JType>, Option<JType>)>
     Ok((params, ret))
 }
 
+#[cfg(test)]
 mod test {
     use super::*;
 
