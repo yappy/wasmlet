@@ -1,4 +1,4 @@
-use anyhow::Context;
+use anyhow::{Context, ensure};
 
 use super::*;
 use std::collections::HashMap;
@@ -7,7 +7,8 @@ impl JVM {
     pub fn new() -> Self {
         Self {
             classes: HashMap::new(),
-            threads: Vec::new(),
+            // main thread
+            threads: vec![Default::default()],
         }
     }
 
@@ -21,6 +22,32 @@ impl JVM {
 
     pub fn get_class(&self, name: &str) -> anyhow::Result<&JClass> {
         self.classes.get(name).context("class not found: {name}")
+    }
+
+    pub fn invoke_static(&mut self, method: &MethodInfo) {
+        todo!()
+    }
+}
+
+impl JThreadContext {
+    fn push_frame(&mut self) -> anyhow::Result<()> {
+        ensure!(
+            self.stack_frames.len() < Self::MAX_FRAMES,
+            "frame stack overflow"
+        );
+        self.stack_frames.push(Default::default());
+
+        Ok(())
+    }
+
+    fn get_frame_top(&mut self) -> anyhow::Result<&mut JStackFrame> {
+        self.stack_frames
+            .last_mut()
+            .context("frame stack underflow")
+    }
+
+    fn pop_frame(&mut self) -> anyhow::Result<JStackFrame> {
+        self.stack_frames.pop().context("frame stack underflow")
     }
 }
 

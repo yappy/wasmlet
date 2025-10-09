@@ -12,10 +12,16 @@ pub struct JVM {
     threads: Vec<JThreadContext>,
 }
 
+#[derive(Default)]
 pub struct JThreadContext {
     stack_frames: Vec<JStackFrame>,
 }
 
+impl JThreadContext {
+    pub const MAX_FRAMES: usize = 256;
+}
+
+#[derive(Default)]
 struct JStackFrame {
     pc: usize,
     local_vars: Vec<JValue>,
