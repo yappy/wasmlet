@@ -335,52 +335,53 @@ pub enum Op {
     },
 }
 
-pub fn next_op(mut bcode: &[u8]) -> anyhow::Result<(Op, &[u8])> {
-    let opcode = bcode.try_get_u8().context("invalid pc")?;
+pub fn next_op(bcode: &[u8]) -> anyhow::Result<(Op, usize)> {
+    let mut rest = bcode;
+    let opcode = rest.try_get_u8().context("invalid pc")?;
 
     let op = match opcode {
         0x00 => Op::Nop,
         0x01 => Op::AconstNull,
         0x03 => Op::Iconst0,
         0x10 => Op::Bipush {
-            byte: bcode.try_get_u8().context("invalid op")?,
+            byte: rest.try_get_u8().context("invalid op")?,
         },
         0x12 => Op::Ldc {
-            index: bcode.try_get_u8().context("invalid op")?,
+            index: rest.try_get_u8().context("invalid op")?,
         },
         0x1b => Op::Iload1,
         0x2a => Op::Aload0,
         0x32 => Op::Aaload,
         0x3c => Op::Astore1,
         0x84 => Op::Iinc {
-            index: bcode.try_get_u8().context("invalid op")?,
-            constant: bcode.try_get_i8().context("invalid op")?,
+            index: rest.try_get_u8().context("invalid op")?,
+            constant: rest.try_get_i8().context("invalid op")?,
         },
         0xa2 => Op::IfIcmpge {
-            branch: bcode.try_get_i16().context("invalid op")?,
+            branch: rest.try_get_i16().context("invalid op")?,
         },
         0xa7 => Op::Goto {
-            branch: bcode.try_get_i16().context("invalid op")?,
+            branch: rest.try_get_i16().context("invalid op")?,
         },
         0xb1 => Op::Return,
         0xb2 => Op::Getstatic {
-            index: bcode.try_get_u16().context("invalid op")?,
+            index: rest.try_get_u16().context("invalid op")?,
         },
         0xb5 => {
-            let index = bcode.try_get_u16().context("invalid op")?;
+            let index = rest.try_get_u16().context("invalid op")?;
             Op::Getstatic { index }
         }
         0xb6 => {
-            let index = bcode.try_get_u16().context("invalid op")?;
+            let index = rest.try_get_u16().context("invalid op")?;
             Op::Invokevirtual { index }
         }
         0xb7 => {
-            let index = bcode.try_get_u16().context("invalid op")?;
+            let index = rest.try_get_u16().context("invalid op")?;
             Op::Invokespecial { index }
         }
         0xbe => Op::Arraylength,
         _ => anyhow::bail!("unsupported opcode: 0x{opcode:02x}"),
     };
 
-    Ok((op, bcode))
+    Ok((op, bcode.len() - rest.len()))
 }

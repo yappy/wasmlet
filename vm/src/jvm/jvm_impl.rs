@@ -1,4 +1,4 @@
-use anyhow::{Context, ensure};
+use anyhow::Context;
 
 use super::*;
 use std::collections::HashMap;
@@ -15,46 +15,80 @@ impl JVM {
     pub fn load_class(&mut self, name: &str, bin: &[u8]) -> anyhow::Result<()> {
         let cls = super::parse::parse_class_file(bin)?;
         anyhow::ensure!(*cls.this_class == name);
-        self.classes.insert(name.to_string(), cls);
+        self.classes.insert(name.to_string(), Rc::new(cls));
 
         Ok(())
     }
 
-    pub fn get_class(&self, name: &str) -> anyhow::Result<&JClass> {
-        self.classes.get(name).context("class not found: {name}")
+    pub fn get_class(&self, name: &str) -> anyhow::Result<Rc<JClass>> {
+        self.classes
+            .get(name)
+            .context("class not found: {name}")
+            .map(Rc::clone)
     }
 
-    pub fn invoke_static(&mut self, method: &MethodInfo) {
-        todo!()
+    pub fn invoke_static(
+        &mut self,
+        tid: u32,
+        method: Rc<MethodInfo>, /* , args... */
+    ) -> anyhow::Result<()> {
+        self.threads[tid as usize].push_frame(method)?;
+
+        Ok(())
+    }
+
+    pub fn run(&mut self, tid: u32) -> anyhow::Result<()> {
+        let thread = &mut self.threads[tid as usize];
+
+        let frame = thread.current_frame();
+        let code = &frame.method.code.as_ref().context("no code")?.code;
+
+        let (op, len) = next_op(&code[frame.pc as usize..])?;
+        println!("[{}] {:?}", frame.pc, op);
+        frame.pc += len as u32;
+
+        Ok(())
     }
 }
 
 impl JThreadContext {
-    fn push_frame(&mut self) -> anyhow::Result<()> {
-        ensure!(
-            self.stack_frames.len() < Self::MAX_FRAMES,
-            "frame stack overflow"
+    fn push_frame(&mut self, method: Rc<MethodInfo>) -> anyhow::Result<&mut JStackFrame> {
+        let code = method.code.as_ref().context("no code")?;
+        let stack = code.max_locals as u32;
+        let local = code.max_stack as u32;
+        let bp = self.stack.len() as u32;
+
+        let stack_consume = stack.saturating_add(local) as usize;
+        anyhow::ensure!(
+            self.stack.len() + stack_consume <= Self::MAX_STACK,
+            "stack overflow"
         );
-        self.stack_frames.push(Default::default());
 
-        Ok(())
+        self.frames.push(JStackFrame {
+            bp,
+            stack,
+            local,
+            pc: 0,
+            method,
+        });
+
+        Ok(self.current_frame())
     }
 
-    fn get_frame_top(&mut self) -> anyhow::Result<&mut JStackFrame> {
-        self.stack_frames
-            .last_mut()
-            .context("frame stack underflow")
+    fn current_frame(&mut self) -> &mut JStackFrame {
+        self.frames.last_mut().expect("no frames")
     }
 
-    fn pop_frame(&mut self) -> anyhow::Result<JStackFrame> {
-        self.stack_frames.pop().context("frame stack underflow")
+    fn pop_frame(&mut self) {
+        self.frames.pop().expect("no frames");
     }
 }
 
 impl JClass {
-    pub fn get_method(&self, name_desc: &str) -> anyhow::Result<&MethodInfo> {
+    pub fn get_method(&self, name_desc: &str) -> anyhow::Result<Rc<MethodInfo>> {
         self.methods
             .get(name_desc)
             .context("method {name_desc} not found")
+            .map(Rc::clone)
     }
 }

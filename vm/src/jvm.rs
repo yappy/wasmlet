@@ -8,32 +8,45 @@ use std::{collections::HashMap, rc::Rc};
 pub use op::next_op;
 
 pub struct JVM {
-    classes: HashMap<String, JClass>,
+    classes: HashMap<String, Rc<JClass>>,
     threads: Vec<JThreadContext>,
 }
 
-#[derive(Default)]
 pub struct JThreadContext {
-    stack_frames: Vec<JStackFrame>,
+    stack: Vec<JValue>,
+    frames: Vec<JStackFrame>,
 }
 
 impl JThreadContext {
-    pub const MAX_FRAMES: usize = 256;
+    pub const DEFAULT_STACK: usize = 1024;
+    pub const MAX_STACK: usize = 1024;
+    pub const DEFAULT_FRAME: usize = Self::DEFAULT_STACK / 8;
 }
 
-#[derive(Default)]
-struct JStackFrame {
-    pc: usize,
-    local_vars: Vec<JValue>,
-    operand_stack: Vec<JValue>,
+impl Default for JThreadContext {
+    fn default() -> Self {
+        Self {
+            stack: Vec::with_capacity(Self::DEFAULT_STACK),
+            frames: Vec::with_capacity(Self::DEFAULT_FRAME),
+        }
+    }
 }
 
 enum JValue {
+    Invalid,
+    FrameInfo(u32),
+    Null,
     Int(i32),
     Float(f32),
-    Long(i64),
-    Double(f64),
-    //Ref(Option<Rc<JObject>>),
+    //Ref(Rc<JValue>),
+}
+
+struct JStackFrame {
+    bp: u32,
+    stack: u32,
+    local: u32,
+    pc: u32,
+    method: Rc<MethodInfo>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -86,8 +99,8 @@ pub struct JClass {
     this_class: Rc<String>,
     super_class: Option<Rc<String>>,
     interfaces: Vec<Rc<String>>,
-    fields: HashMap<String, FieldInfo>,
-    methods: HashMap<String, MethodInfo>,
+    fields: HashMap<String, Rc<FieldInfo>>,
+    methods: HashMap<String, Rc<MethodInfo>>,
     // attributes
 }
 

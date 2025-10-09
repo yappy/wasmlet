@@ -87,11 +87,11 @@ pub fn parse_class_file(mut p: &[u8]) -> anyhow::Result<JClass> {
     // create HashMap for fields and methods
     let fields = fields
         .into_iter()
-        .map(|f| (f.name_desc.clone(), f))
+        .map(|f| (f.name_desc.clone(), Rc::new(f)))
         .collect();
     let methods = methods
         .into_iter()
-        .map(|m| (m.name_desc.clone(), m))
+        .map(|m| (m.name_desc.clone(), Rc::new(m)))
         .collect();
 
     Ok(JClass {

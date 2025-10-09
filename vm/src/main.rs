@@ -3,6 +3,7 @@ use anyhow::Context;
 mod jvm;
 mod res;
 
+#[allow(dead_code)]
 fn test_dump_method(vm: &jvm::JVM, cls: &str, method: &str) -> anyhow::Result<()> {
     let main_class = vm.get_class(cls)?;
     let method = main_class.get_method(method)?;
@@ -12,11 +13,22 @@ fn test_dump_method(vm: &jvm::JVM, cls: &str, method: &str) -> anyhow::Result<()
     let mut pc: &[u8] = code;
     let mut ind = 0;
     while !pc.is_empty() {
-        let op;
-        (op, pc) = jvm::next_op(pc)?;
+        let (op, len) = jvm::next_op(pc)?;
         println!("[{ind:02}] {op:?}");
         ind += 1;
+        pc = &pc[len..];
     }
+
+    Ok(())
+}
+
+fn run_main(vm: &mut jvm::JVM, cls: &str) -> anyhow::Result<()> {
+    let main_class = vm.get_class(cls)?;
+    let method = main_class.get_method("main([Ljava/lang/String;)V")?;
+    println!("Invoke {cls}.main(String[] args)");
+    vm.invoke_static(0, method)?;
+
+    vm.run(0)?;
 
     Ok(())
 }
@@ -31,8 +43,10 @@ fn main() -> anyhow::Result<()> {
         vm.load_class(name, bin)?;
     }
 
-    test_dump_method(&vm, "MasaoConstruction", "<init>()V")?;
-    test_dump_method(&vm, "Hello", "main([Ljava/lang/String;)V")?;
+    //test_dump_method(&vm, "MasaoConstruction", "<init>()V")?;
+    //test_dump_method(&vm, "Hello", "main([Ljava/lang/String;)V")?;
+
+    run_main(&mut vm, "Hello")?;
 
     Ok(())
 }
