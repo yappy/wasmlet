@@ -32,27 +32,38 @@ impl JVM {
         tid: u32,
         method: Rc<MethodInfo>, /* , args... */
     ) -> anyhow::Result<()> {
-        self.threads[tid as usize].push_frame(method)?;
+        self.threads[tid as usize].new_frame(method)?;
 
         Ok(())
     }
 
     pub fn run(&mut self, tid: u32) -> anyhow::Result<()> {
-        let thread = &mut self.threads[tid as usize];
+        use op::Op;
 
-        let frame = thread.current_frame();
+        let thread = &mut self.threads[tid as usize];
+        let mut frame = thread.pop_frame();
         let code = &frame.method.code.as_ref().context("no code")?.code;
 
-        let (op, len) = next_op(&code[frame.pc as usize..])?;
-        println!("[{}] {:?}", frame.pc, op);
-        frame.pc += len as u32;
+        let ret = loop {
+            let (op, len) = next_op(&code[frame.pc as usize..])?;
+            println!("[{}] {:?}", frame.pc, op);
+            frame.pc += len as u32;
+
+            if matches!(op, Op::Return) {
+                break true;
+            }
+        };
+
+        if !ret {
+            thread.push_frame(frame);
+        }
 
         Ok(())
     }
 }
 
 impl JThreadContext {
-    fn push_frame(&mut self, method: Rc<MethodInfo>) -> anyhow::Result<&mut JStackFrame> {
+    fn new_frame(&mut self, method: Rc<MethodInfo>) -> anyhow::Result<&mut JStackFrame> {
         let code = method.code.as_ref().context("no code")?;
         let stack = code.max_locals as u32;
         let local = code.max_stack as u32;
@@ -78,9 +89,12 @@ impl JThreadContext {
     fn current_frame(&mut self) -> &mut JStackFrame {
         self.frames.last_mut().expect("no frames")
     }
+    fn push_frame(&mut self, frame: JStackFrame) {
+        self.frames.push(frame);
+    }
 
-    fn pop_frame(&mut self) {
-        self.frames.pop().expect("no frames");
+    fn pop_frame(&mut self) -> JStackFrame {
+        self.frames.pop().expect("no frames")
     }
 }
 
