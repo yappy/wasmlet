@@ -250,13 +250,13 @@ enum ConstInfoRaw {
         string_index: u16,
     },
     Integer {
-        bytes: u32,
+        bytes: i32,
     },
     Float {
         bytes: f32,
     },
     Long {
-        bytes: u64,
+        bytes: i64,
     },
     Double {
         bytes: f64,
@@ -325,7 +325,7 @@ fn parse_cp_info(mut p: &[u8]) -> anyhow::Result<(&[u8], ConstantPool)> {
                 (1, ConstInfoRaw::String { string_index })
             }
             ctype::INTEGER => {
-                let bytes = p.try_get_u32()?;
+                let bytes = p.try_get_i32()?;
                 (1, ConstInfoRaw::Integer { bytes })
             }
             ctype::FLOAT => {
@@ -333,7 +333,7 @@ fn parse_cp_info(mut p: &[u8]) -> anyhow::Result<(&[u8], ConstantPool)> {
                 (1, ConstInfoRaw::Float { bytes })
             }
             ctype::LONG => {
-                let bytes = p.try_get_u64()?;
+                let bytes = p.try_get_i64()?;
                 (2, ConstInfoRaw::Long { bytes })
             }
             ctype::DOUBLE => {
@@ -555,7 +555,15 @@ fn parse_fields<'a>(
         let access_flags = p.try_get_u16()?;
         let name_index = p.try_get_u16()?;
         let descriptor_index = p.try_get_u16()?;
-        (p, _) = parse_attributes(p, cp)?;
+
+        let attrs;
+        (p, attrs) = parse_attributes(p, cp)?;
+        let mut constant_value = None;
+        for attr in attrs {
+            if let Attribute::ConstantValue(v) = attr {
+                constant_value = Some(v);
+            }
+        }
 
         let name = cp.get_utf8(name_index)?;
         let descriptor = cp.get_utf8(descriptor_index)?;
@@ -566,6 +574,7 @@ fn parse_fields<'a>(
             name,
             descriptor,
             name_desc,
+            constant_value,
             jtype,
         });
     }
@@ -650,12 +659,35 @@ fn parse_attributes<'a>(
         p = &p[attribute_length..];
 
         match name.as_str() {
+            "ConstantValue" => attributes.push(Attribute::ConstantValue(
+                parse_attribute_constant_value(data, cp)?,
+            )),
             "Code" => attributes.push(Attribute::Code(parse_attribute_code(data, cp)?)),
             _ => println!("unknown attribute: {name}"),
         }
     }
 
     Ok((p, attributes))
+}
+
+/*
+ConstantValue_attribute {
+    u2 attribute_name_index;
+    u4 attribute_length;
+    u2 constantvalue_index;
+}
+*/
+fn parse_attribute_constant_value(mut p: &[u8], cp: &ConstantPool) -> anyhow::Result<JValue> {
+    let constantvalue_index = p.try_get_u16()?;
+    let v = match cp.get(constantvalue_index)? {
+        &ConstInfo::Long { bytes } => JValue::Long(bytes),
+        &ConstInfo::Float { bytes } => JValue::Float(bytes),
+        &ConstInfo::Double { bytes } => JValue::Double(bytes),
+        &ConstInfo::Integer { bytes } => JValue::Int(bytes),
+        _ => anyhow::bail!("invalid constant type"),
+    };
+
+    Ok(v)
 }
 
 /*

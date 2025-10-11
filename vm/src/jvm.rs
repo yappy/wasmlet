@@ -40,7 +40,9 @@ enum JValue {
     Invalid,
     Null,
     Int(i32),
+    Long(i64),
     Float(f32),
+    Double(f64),
     //Ref(Rc<JValue>),
 }
 
@@ -147,13 +149,13 @@ enum ConstInfo {
         string: Rc<String>,
     },
     Integer {
-        bytes: u32,
+        bytes: i32,
     },
     Float {
         bytes: f32,
     },
     Long {
-        bytes: u64,
+        bytes: i64,
     },
     Double {
         bytes: f64,
@@ -174,6 +176,7 @@ pub struct FieldInfo {
     descriptor: Rc<String>,
     name_desc: String,
     // attributes
+    constant_value: Option<JValue>,
 
     // parsed
     pub jtype: JType,
@@ -216,6 +219,7 @@ pub struct MethodInfo {
 
 #[derive(Debug)]
 enum Attribute {
+    ConstantValue(JValue),
     Code(Code),
 }
 

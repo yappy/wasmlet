@@ -17,6 +17,7 @@ fn define_field(access_flags: u16, name: &str, descriptor: &str) -> FieldInfo {
         name: Rc::new(name),
         descriptor: Rc::new(descriptor),
         name_desc,
+        constant_value: Some(JValue::Null),
         jtype,
     }
 }
