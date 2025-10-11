@@ -64,6 +64,9 @@ impl JType {
             ctype,
         }
     }
+    fn array_of(ctype: JComponentType, array_dim: usize) -> Self {
+        Self { array_dim, ctype }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -166,6 +169,27 @@ pub struct FieldInfo {
 
     // parsed
     pub jtype: JType,
+}
+
+type NativeFunc = Box<dyn FnMut(/* TODO */)>;
+
+enum MethodCode {
+    /// No code attribute
+    None,
+    /// JVM instructions
+    JOp(Code),
+    /// Native function call
+    Native(NativeFunc),
+}
+
+impl std::fmt::Debug for MethodCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        match self {
+            Self::None => f.write_str("None"),
+            Self::JOp(code) => f.debug_tuple("JOp").field(code).finish(),
+            Self::Native(_) => f.write_str("Native"),
+        }
+    }
 }
 
 #[derive(Debug)]

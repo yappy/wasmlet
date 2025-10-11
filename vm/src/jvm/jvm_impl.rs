@@ -43,27 +43,55 @@ impl JVM {
     }
 
     pub fn run(&mut self, tid: u32) -> anyhow::Result<()> {
-        use op::Op;
-
-        let thread = &mut self.threads[tid as usize];
-        let mut frame = thread.pop_frame();
+        // tentatively pop the current frame to execute
+        let mut frame = self.threads[tid as usize].pop_frame();
         let code = &frame.method.code.as_ref().context("no code")?.code;
 
-        let ret = loop {
+        let result = loop {
+            // fetch the next op
             let (op, len) = next_op(&code[frame.pc as usize..])?;
             println!("[{}] {:?}", frame.pc, op);
             frame.pc += len as u32;
 
-            if matches!(op, Op::Return) {
-                break true;
+            let result = self.exec_op(op)?;
+            // TODO: make a chance to preempt during normal execution
+            if !matches!(result, ExecOpResult::Continue) {
+                break result;
             }
         };
 
-        if !ret {
-            thread.push_frame(frame);
+        // if return, do not restore the current frame (do pop)
+        match result {
+            ExecOpResult::Continue => self.threads[tid as usize].push_frame(frame),
+            ExecOpResult::PopFrame => {}
+            ExecOpResult::PushFrame(new_frame) => {
+                self.threads[tid as usize].push_frame(frame);
+                self.threads[tid as usize].push_frame(new_frame);
+            }
         }
 
         Ok(())
+    }
+}
+
+enum ExecOpResult {
+    Continue,
+    /// Return from the method.
+    PopFrame,
+    /// Invoke a new method.
+    PushFrame(JStackFrame),
+}
+
+impl JVM {
+    fn exec_op(&mut self, op: op::Op) -> anyhow::Result<ExecOpResult> {
+        use op::Op;
+
+        let res = match op {
+            Op::Return => ExecOpResult::PopFrame,
+            _ => ExecOpResult::Continue,
+        };
+
+        Ok(res)
     }
 }
 
