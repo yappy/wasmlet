@@ -26,7 +26,7 @@ fn run_main(vm: &mut jvm::JVM, cls: &str) -> anyhow::Result<()> {
     let main_class = vm.get_class(cls)?;
     let method = main_class.get_method("main([Ljava/lang/String;)V")?;
     println!("Invoke {cls}.main(String[] args)");
-    vm.invoke_static(0, method)?;
+    vm.invoke_static(0, main_class, method)?;
 
     vm.run(0)?;
 

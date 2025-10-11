@@ -11,6 +11,7 @@ pub use stdlib::load_core as stdlib_load_core;
 
 pub struct JVM {
     classes: HashMap<String, Rc<JClass>>,
+    class_rt: HashMap<String, JClassRuntimeInfo>,
     threads: Vec<JThreadContext>,
 }
 
@@ -34,9 +35,9 @@ impl Default for JThreadContext {
     }
 }
 
+#[derive(Debug)]
 enum JValue {
     Invalid,
-    FrameInfo(u32),
     Null,
     Int(i32),
     Float(f32),
@@ -48,6 +49,7 @@ struct JStackFrame {
     stack: u32,
     local: u32,
     pc: u32,
+    class: Rc<JClass>,
     method: Rc<MethodInfo>,
 }
 
@@ -107,6 +109,12 @@ pub struct JClass {
     fields: HashMap<String, Rc<FieldInfo>>,
     methods: HashMap<String, Rc<MethodInfo>>,
     // attributes
+}
+
+#[derive(Default)]
+struct JClassRuntimeInfo {
+    initialized: bool,
+    static_fields: HashMap<String, JValue>,
 }
 
 #[derive(Debug)]

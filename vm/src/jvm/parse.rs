@@ -500,11 +500,11 @@ impl ConstantPool {
         Ok(Self { pool })
     }
 
-    fn get(&self, idx: u16) -> anyhow::Result<&ConstInfo> {
+    pub fn get(&self, idx: u16) -> anyhow::Result<&ConstInfo> {
         self.pool.get(idx as usize).context("index out of range")
     }
 
-    fn get_utf8(&self, idx: u16) -> anyhow::Result<Rc<String>> {
+    pub fn get_utf8(&self, idx: u16) -> anyhow::Result<Rc<String>> {
         if let ConstInfo::Utf8 { bytes } = self.get(idx)? {
             Ok(Rc::clone(bytes))
         } else {
@@ -512,9 +512,22 @@ impl ConstantPool {
         }
     }
 
-    fn get_class(&self, idx: u16) -> anyhow::Result<Rc<String>> {
+    pub fn get_class(&self, idx: u16) -> anyhow::Result<Rc<String>> {
         if let ConstInfo::Class { name } = self.get(idx)? {
             Ok(Rc::clone(name))
+        } else {
+            anyhow::bail!("#{idx} is not Class");
+        }
+    }
+
+    pub fn get_field(&self, idx: u16) -> anyhow::Result<(Rc<String>, Rc<String>, Rc<String>)> {
+        if let ConstInfo::Fieldref {
+            class,
+            name,
+            descriptor,
+        } = self.get(idx)?
+        {
+            Ok((Rc::clone(class), Rc::clone(name), Rc::clone(descriptor)))
         } else {
             anyhow::bail!("#{idx} is not Class");
         }

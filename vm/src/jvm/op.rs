@@ -263,29 +263,33 @@ pub enum Op {
     Dreturn,
     Areturn,
     Return,
-    Getstatic {
+    /// A getstatic instruction with operand CP is type safe iff CP refers to
+    /// a constant pool entry denoting a field whose declared type is FieldType,
+    /// and one can validly push FieldType on the incoming operand stack
+    /// yielding the outgoing type state.
+    GetStatic {
         index: u16,
     },
-    Putstatic {
+    PutStatic {
         index: u16,
     },
-    Getfield {
+    GetField {
         index: u16,
     },
-    Putfield {
+    PutField {
         index: u16,
     },
-    Invokevirtual {
+    InvokeVirtual {
         index: u16,
     },
     /// Invoke instance method; special handling for superclass, private,
     /// and instance initialization method invocations.
     /// objectref, [arg1, [arg2 ...]] -> ...
-    Invokespecial {
+    InvokeSpecial {
         /// cp[index] must be a method reference
         index: u16,
     },
-    Invokestatic {
+    InvokeStatic {
         index: u16,
     },
     Invokeinterface {
@@ -364,20 +368,16 @@ pub fn next_op(bcode: &[u8]) -> anyhow::Result<(Op, usize)> {
             branch: rest.try_get_i16().context("invalid op")?,
         },
         0xb1 => Op::Return,
-        0xb2 => Op::Getstatic {
+        0xb2 => Op::GetStatic {
             index: rest.try_get_u16().context("invalid op")?,
         },
-        0xb5 => {
-            let index = rest.try_get_u16().context("invalid op")?;
-            Op::Getstatic { index }
-        }
         0xb6 => {
             let index = rest.try_get_u16().context("invalid op")?;
-            Op::Invokevirtual { index }
+            Op::InvokeVirtual { index }
         }
         0xb7 => {
             let index = rest.try_get_u16().context("invalid op")?;
-            Op::Invokespecial { index }
+            Op::InvokeSpecial { index }
         }
         0xbe => Op::Arraylength,
         _ => anyhow::bail!("unsupported opcode: 0x{opcode:02x}"),

@@ -1,12 +1,12 @@
 use anyhow::Context;
 
 use super::*;
-use std::collections::HashMap;
 
 impl JVM {
     pub fn new() -> Self {
         Self {
-            classes: HashMap::new(),
+            classes: Default::default(),
+            class_rt: Default::default(),
             // main thread
             threads: vec![Default::default()],
         }
@@ -15,7 +15,8 @@ impl JVM {
     pub fn load_class(&mut self, bin: &[u8]) -> anyhow::Result<()> {
         let cls = super::parse::parse_class_file(bin)?;
         let clsname = cls.this_class.to_string();
-        self.classes.insert(clsname, Rc::new(cls));
+        self.classes.insert(clsname.clone(), Rc::new(cls));
+        self.class_rt.insert(clsname, Default::default());
 
         Ok(())
     }
@@ -35,9 +36,10 @@ impl JVM {
     pub fn invoke_static(
         &mut self,
         tid: u32,
+        cls: Rc<JClass>,
         method: Rc<MethodInfo>, /* , args... */
     ) -> anyhow::Result<()> {
-        self.threads[tid as usize].new_frame(method)?;
+        self.threads[tid as usize].new_frame(cls, method)?;
 
         Ok(())
     }
@@ -45,15 +47,15 @@ impl JVM {
     pub fn run(&mut self, tid: u32) -> anyhow::Result<()> {
         // tentatively pop the current frame to execute
         let mut frame = self.threads[tid as usize].pop_frame();
-        let code = &frame.method.code.as_ref().context("no code")?.code;
 
         let result = loop {
             // fetch the next op
+            let code = &frame.method.code.as_ref().context("no code")?.code;
             let (op, len) = next_op(&code[frame.pc as usize..])?;
             println!("[{}] {:?}", frame.pc, op);
             frame.pc += len as u32;
 
-            let result = self.exec_op(op)?;
+            let result = self.exec_op(&mut frame, op)?;
             // TODO: make a chance to preempt during normal execution
             if !matches!(result, ExecOpResult::Continue) {
                 break result;
@@ -83,10 +85,17 @@ enum ExecOpResult {
 }
 
 impl JVM {
-    fn exec_op(&mut self, op: op::Op) -> anyhow::Result<ExecOpResult> {
+    fn exec_op(&mut self, frame: &mut JStackFrame, op: op::Op) -> anyhow::Result<ExecOpResult> {
         use op::Op;
+        let cls = &frame.class;
 
         let res = match op {
+            Op::GetStatic { index } => {
+                let (fcls, fname, fdesc) = cls.constant_pool.get_field(index)?;
+                println!("GetStatic #{index} {fcls} {fname} {fdesc}");
+
+                ExecOpResult::Continue
+            }
             Op::Return => ExecOpResult::PopFrame,
             _ => ExecOpResult::Continue,
         };
@@ -96,7 +105,11 @@ impl JVM {
 }
 
 impl JThreadContext {
-    fn new_frame(&mut self, method: Rc<MethodInfo>) -> anyhow::Result<&mut JStackFrame> {
+    fn new_frame(
+        &mut self,
+        class: Rc<JClass>,
+        method: Rc<MethodInfo>,
+    ) -> anyhow::Result<&mut JStackFrame> {
         let code = method.code.as_ref().context("no code")?;
         let stack = code.max_locals as u32;
         let local = code.max_stack as u32;
@@ -113,6 +126,7 @@ impl JThreadContext {
             stack,
             local,
             pc: 0,
+            class,
             method,
         });
 
