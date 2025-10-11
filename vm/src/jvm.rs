@@ -2,10 +2,12 @@ mod desc;
 mod jvm_impl;
 mod op;
 mod parse;
+mod stdlib;
 
 use std::{collections::HashMap, rc::Rc};
 
 pub use op::next_op;
+pub use stdlib::load_core as stdlib_load_core;
 
 pub struct JVM {
     classes: HashMap<String, Rc<JClass>>,
@@ -161,6 +163,9 @@ pub struct FieldInfo {
     descriptor: Rc<String>,
     name_desc: String,
     // attributes
+
+    // parsed
+    pub jtype: JType,
 }
 
 #[derive(Debug)]

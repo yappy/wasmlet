@@ -1,14 +1,11 @@
 // ("name", include_bytes!(dir + "/" + name + ".class"))
 macro_rules! mc_name_bin {
     ($dir:expr, $name:expr) => {
-        (
-            $name,
-            include_bytes!(concat!("../../", $dir, "/", $name, ".class")),
-        )
+        include_bytes!(concat!("../../", $dir, "/", $name, ".class"))
     };
 }
 
-pub const MC_CLASS_FILES: &[(&str, &[u8])] = &[
+pub const MC_CLASS_FILES: &[&[u8]] = &[
     mc_name_bin!("mc2", "CharacterObject"),
     mc_name_bin!("mc2", "GameGraphics"),
     mc_name_bin!("mc2", "GameKey"),
@@ -20,4 +17,4 @@ pub const MC_CLASS_FILES: &[(&str, &[u8])] = &[
     mc_name_bin!("mc2", "MasaoConstruction"),
 ];
 
-pub const SAMPLE_CLASS_FILES: &[(&str, &[u8])] = &[mc_name_bin!("jsample", "Hello")];
+pub const SAMPLE_CLASS_FILES: &[&[u8]] = &[mc_name_bin!("jsample", "Hello")];

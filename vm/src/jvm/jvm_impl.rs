@@ -12,12 +12,17 @@ impl JVM {
         }
     }
 
-    pub fn load_class(&mut self, name: &str, bin: &[u8]) -> anyhow::Result<()> {
+    pub fn load_class(&mut self, bin: &[u8]) -> anyhow::Result<()> {
         let cls = super::parse::parse_class_file(bin)?;
-        anyhow::ensure!(*cls.this_class == name);
-        self.classes.insert(name.to_string(), Rc::new(cls));
+        let clsname = cls.this_class.to_string();
+        self.classes.insert(clsname, Rc::new(cls));
 
         Ok(())
+    }
+
+    pub fn load_native_class(&mut self, cls: JClass) {
+        let clsname = cls.this_class.to_string();
+        self.classes.insert(clsname, Rc::new(cls));
     }
 
     pub fn get_class(&self, name: &str) -> anyhow::Result<Rc<JClass>> {

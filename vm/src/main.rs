@@ -34,19 +34,20 @@ fn run_main(vm: &mut jvm::JVM, cls: &str) -> anyhow::Result<()> {
 }
 
 fn main() -> anyhow::Result<()> {
-    let mut vm = jvm::JVM::new();
+    let mut jvm = jvm::JVM::new();
+    jvm::stdlib_load_core(&mut jvm);
 
-    for (name, bin) in res::MC_CLASS_FILES {
-        vm.load_class(name, bin)?;
+    for bin in res::MC_CLASS_FILES {
+        jvm.load_class(bin)?;
     }
-    for (name, bin) in res::SAMPLE_CLASS_FILES {
-        vm.load_class(name, bin)?;
+    for bin in res::SAMPLE_CLASS_FILES {
+        jvm.load_class(bin)?;
     }
 
-    //test_dump_method(&vm, "MasaoConstruction", "<init>()V")?;
-    //test_dump_method(&vm, "Hello", "main([Ljava/lang/String;)V")?;
+    //test_dump_method(&jvm, "MasaoConstruction", "<init>()V")?;
+    //test_dump_method(&jvm, "Hello", "main([Ljava/lang/String;)V")?;
 
-    run_main(&mut vm, "Hello")?;
+    run_main(&mut jvm, "Hello")?;
 
     Ok(())
 }
