@@ -1,5 +1,7 @@
 use anyhow::Context;
 
+use crate::jvm::JThreadContext;
+
 mod jvm;
 mod res;
 
@@ -26,9 +28,10 @@ fn run_main(vm: &mut jvm::JVM, cls: &str) -> anyhow::Result<()> {
     let main_class = vm.get_class(cls)?;
     let method = main_class.get_method("main([Ljava/lang/String;)V")?;
     println!("Invoke {cls}.main(String[] args)");
-    vm.invoke_static(0, main_class, method)?;
 
-    vm.run(0)?;
+    let mut th = JThreadContext::default();
+    vm.invoke_static(&mut th, main_class, method)?;
+    vm.run(&mut th)?;
 
     Ok(())
 }

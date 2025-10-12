@@ -1,14 +1,11 @@
-use anyhow::Context;
-
 use super::*;
+use anyhow::Context;
 
 impl JVM {
     pub fn new() -> Self {
         Self {
             classes: Default::default(),
             class_rt: Default::default(),
-            // main thread
-            threads: vec![Default::default()],
         }
     }
 
@@ -23,31 +20,116 @@ impl JVM {
 
     pub fn load_native_class(&mut self, cls: JClass) {
         let clsname = cls.this_class.to_string();
-        self.classes.insert(clsname, Rc::new(cls));
+        self.classes.insert(clsname.clone(), Rc::new(cls));
+        self.class_rt.insert(clsname, Default::default());
     }
 
     pub fn get_class(&self, name: &str) -> anyhow::Result<Rc<JClass>> {
         self.classes
             .get(name)
-            .context("class not found: {name}")
+            .with_context(|| format!("class not found: {name}"))
             .map(Rc::clone)
     }
 
+    /// 5.5. Initialization
+    /// The execution of any one of the Java Virtual Machine instructions
+    /// new, getstatic, putstatic, or invokestatic that references C
+    /// (§new, §getstatic, §putstatic, §invokestatic).
+    /// These instructions reference a class or interface directly or indirectly
+    /// through either a field reference or a method reference.
+    ///
+    /// Upon execution of a new instruction, the referenced class is initialized
+    /// if it has not been initialized already.
+    ///
+    /// Upon execution of a getstatic, putstatic, or invokestatic instruction,
+    /// the class or interface that declared the resolved field or method is
+    /// initialized if it has not been initialized already.
+    ///
+    /// If C is a class, the initialization of one of its subclasses.
+    ///
+    /// If C is an interface that declares a non-abstract, non-static method,
+    /// the initialization of a class that implements C directly or indirectly.
+    ///
+    /// If C is a class, its designation as the initial class at
+    /// Java Virtual Machine startup (§5.2).
+    fn get_class_rtinfo(&mut self, name: &String) -> anyhow::Result<&mut JClassRuntimeInfo> {
+        let cls = self.get_class(name)?;
+        let rtinfo = self
+            .class_rt
+            .get_mut(name)
+            .with_context(|| format!("class rtinfo not found: {name}"))?;
+        if rtinfo.initialized {
+            return Ok(rtinfo);
+        }
+
+        // class initialize
+        // TODO: not perfect yet
+        for field in cls.fields.values() {
+            if field.access_flags & acc_field::STATIC != 0 {
+                let v = if let Some(v) = &field.constant_value {
+                    v.clone()
+                } else {
+                    field.jtype.to_default_value()
+                };
+                rtinfo.static_fields.insert(field.name.to_string(), v);
+            }
+        }
+        rtinfo.initialized = true;
+
+        Ok(rtinfo)
+    }
+
+    pub fn get_static(&mut self, clsname: &String, fname: &String) -> anyhow::Result<JValue> {
+        let cls_info = self.get_class_rtinfo(clsname)?;
+        assert!(cls_info.initialized);
+        let v = cls_info
+            .static_fields
+            .get(fname)
+            .with_context(|| format!("field not found: {fname}"))?;
+
+        Ok(v.clone())
+    }
+
     pub fn invoke_static(
-        &mut self,
-        tid: u32,
+        &self,
+        th: &mut JThreadContext,
         cls: Rc<JClass>,
         method: Rc<MethodInfo>, /* , args... */
     ) -> anyhow::Result<()> {
-        self.threads[tid as usize].new_frame(cls, method)?;
+        th.new_frame(cls, method)?;
 
         Ok(())
     }
 
-    pub fn run(&mut self, tid: u32) -> anyhow::Result<()> {
+    pub fn run(&mut self, th: &mut JThreadContext) -> anyhow::Result<()> {
         // tentatively pop the current frame to execute
-        let mut frame = self.threads[tid as usize].pop_frame();
+        let mut frame = th.pop_frame();
 
+        let result = self.run_internal(&mut th.stack, &mut frame);
+
+        // if return or err, do not restore the current frame (do pop)
+        let res = match result {
+            Ok(ExecOpResult::Continue) => {
+                th.push_frame(frame);
+                Ok(())
+            }
+            Ok(ExecOpResult::PopFrame) => Ok(()),
+            Ok(ExecOpResult::PushFrame(new_frame)) => {
+                th.push_frame(frame);
+                th.push_frame(new_frame);
+                Ok(())
+            }
+            Err(e) => Err(e),
+        };
+
+        res
+    }
+
+    fn run_internal(
+        &mut self,
+        stack: &mut Vec<JValue>,
+        frame: &mut JStackFrame,
+    ) -> anyhow::Result<ExecOpResult> {
         let result = loop {
             // fetch the next op
             let code = &frame.method.code.as_ref().context("no code")?.code;
@@ -55,24 +137,14 @@ impl JVM {
             println!("[{}] {:?}", frame.pc, op);
             frame.pc += len as u32;
 
-            let result = self.exec_op(&mut frame, op)?;
+            let result = self.exec_op(frame, op)?;
             // TODO: make a chance to preempt during normal execution
             if !matches!(result, ExecOpResult::Continue) {
                 break result;
             }
         };
 
-        // if return, do not restore the current frame (do pop)
-        match result {
-            ExecOpResult::Continue => self.threads[tid as usize].push_frame(frame),
-            ExecOpResult::PopFrame => {}
-            ExecOpResult::PushFrame(new_frame) => {
-                self.threads[tid as usize].push_frame(frame);
-                self.threads[tid as usize].push_frame(new_frame);
-            }
-        }
-
-        Ok(())
+        Ok(result)
     }
 }
 
@@ -91,8 +163,11 @@ impl JVM {
 
         let res = match op {
             Op::GetStatic { index } => {
-                let (fcls, fname, fdesc) = cls.constant_pool.get_field(index)?;
-                println!("GetStatic #{index} {fcls} {fname} {fdesc}");
+                let (fcls, fname, _fdesc) = cls.constant_pool.get_field(index)?;
+                println!("GetStatic #{index} {fcls} {fname}");
+
+                let v = self.get_static(&fcls, &fname)?;
+                println!("GetStatic: {v:?}");
 
                 ExecOpResult::Continue
             }
