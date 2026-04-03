@@ -287,7 +287,7 @@ pub struct MethodInfo {
     descriptor: Rc<String>,
     name_desc: String,
     // attributes
-    pub code: Option<Code>,
+    pub method_body: MethodBody,
 
     // parsed
     pub ret_type: Option<JType>,
@@ -298,6 +298,26 @@ pub struct MethodInfo {
 enum Attribute {
     ConstantValue(JValue),
     Code(Code),
+}
+
+type NativeMathod = Box<dyn FnMut()>;
+
+pub enum MethodBody {
+    None,
+    Java(Code),
+    Native(NativeMathod),
+}
+
+impl std::fmt::Debug for MethodBody {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut ds = f.debug_struct("MethodBody");
+        match self {
+            Self::None => ds.field("None", &""),
+            Self::Java(jc) => ds.field("Java", jc),
+            Self::Native(_) => ds.field("Native", &"(native fn)"),
+        }
+        .finish()
+    }
 }
 
 pub struct Code {

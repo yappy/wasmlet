@@ -1,5 +1,3 @@
-use anyhow::Context;
-
 use crate::jvm::JThreadContext;
 
 mod jvm;
@@ -10,7 +8,18 @@ fn test_dump_method(vm: &jvm::JVM, cls: &str, method: &str) -> anyhow::Result<()
     let main_class = vm.get_class(cls)?;
     let method = main_class.get_method(method)?;
     println!("{method:?}");
-    let code = &method.code.as_ref().context("no code")?.code;
+
+    let code = match &method.method_body {
+        jvm::MethodBody::None => {
+            println!("no code");
+            return Ok(());
+        }
+        jvm::MethodBody::Native(_func) => {
+            println!("native call");
+            return Ok(());
+        }
+        jvm::MethodBody::Java(code) => &code.code,
+    };
 
     let mut pc: &[u8] = code;
     let mut ind = 0;

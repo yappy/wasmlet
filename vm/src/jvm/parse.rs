@@ -539,10 +539,10 @@ fn parse_methods<'a>(
 
         let attrs;
         (p, attrs) = parse_attributes(p, cp)?;
-        let mut code = None;
+        let mut method_body = MethodBody::None;
         for attr in attrs {
             if let Attribute::Code(c) = attr {
-                code = Some(c);
+                method_body = MethodBody::Java(c);
             }
         }
 
@@ -555,7 +555,7 @@ fn parse_methods<'a>(
             name,
             descriptor,
             name_desc,
-            code,
+            method_body,
             ret_type,
             param_types,
         });

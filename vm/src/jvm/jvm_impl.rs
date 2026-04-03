@@ -131,8 +131,13 @@ impl JVM {
         frame: &mut JStackFrame,
     ) -> anyhow::Result<ExecOpResult> {
         let result = loop {
+            let code = match &frame.method.method_body {
+                MethodBody::None => anyhow::bail!("no code"),
+                MethodBody::Native(_func) => unimplemented!("native call"),
+                MethodBody::Java(code) => &code.code,
+            };
+
             // fetch the next op
-            let code = &frame.method.code.as_ref().context("no code")?.code;
             let (op, len) = next_op(&code[frame.pc as usize..])?;
             println!("[{}] {:?}", frame.pc, op);
             frame.pc += len as u32;
@@ -185,7 +190,11 @@ impl JThreadContext {
         class: Rc<JClass>,
         method: Rc<MethodInfo>,
     ) -> anyhow::Result<&mut JStackFrame> {
-        let code = method.code.as_ref().context("no code")?;
+        let code = if let MethodBody::Java(code) = &method.method_body {
+            code
+        } else {
+            anyhow::bail!("no code");
+        };
         let stack = code.max_locals as u32;
         let local = code.max_stack as u32;
         let bp = self.stack.len() as u32;
