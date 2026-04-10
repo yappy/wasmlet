@@ -11,7 +11,13 @@
   * `class A { static {...} }` のように書かれるクラスイニシャライザ。
   * 正式名は class or interface initialization method。
   * JVM 命令から明示的に呼び出されることはない。
-  * クラスの初期化時に暗黙に呼び出す必要がある。
+  * クラスを初めて使用する際に未初期化ならば暗黙に呼び出す必要がある。
+    * 当然、マルチスレッド注意。
+    * `class A { static int x = B.x; }`
+      `class B { static int x = A.x; }`
+      のようなコーナーケースがあるらしい (AI談)。
+  * static フィールドの初期化で複雑な式を書くとこの中に移動される。
+    * 単純なものはフィールドの
 
 ## ACC_SUPER
 

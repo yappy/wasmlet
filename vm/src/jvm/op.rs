@@ -379,6 +379,10 @@ pub fn next_op(bcode: &[u8]) -> anyhow::Result<(Op, usize)> {
             let index = rest.try_get_u16().context("invalid op")?;
             Op::InvokeSpecial { index }
         }
+        0xb8 => {
+            let index = rest.try_get_u16().context("invalid op")?;
+            Op::InvokeStatic { index }
+        }
         0xbe => Op::Arraylength,
         _ => anyhow::bail!("unsupported opcode: 0x{opcode:02x}"),
     };

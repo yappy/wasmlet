@@ -62,18 +62,3 @@ fn java_lang_system() -> JClass {
         methods,
     )
 }
-
-fn java_io_print_stream() -> JClass {
-    let mut fields = HashMap::new();
-    let mut methods = HashMap::new();
-
-    let name = "out";
-    //let method = define_me
-
-    parse::define_native_class(
-        "java/lang/System",
-        Some("java/lang/Object"),
-        fields,
-        methods,
-    )
-}
