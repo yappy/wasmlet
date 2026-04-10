@@ -167,6 +167,17 @@ impl JVM {
         let cls = &frame.class;
 
         let res = match op {
+            Op::Ldc { index } => {
+                let value = frame.class.constant_pool.get(index as u16)?;
+                match value {
+                    ConstInfo::Integer { bytes } => todo!(),
+                    ConstInfo::Float { bytes } => todo!(),
+                    ConstInfo::String { string } => todo!(),
+                    _ => anyhow::bail!("Unknown runtime constant info: {value:?}"),
+                }
+
+                ExecOpResult::Continue
+            }
             Op::GetStatic { index } => {
                 let (fcls, fname, _fdesc) = cls.constant_pool.get_field(index)?;
                 println!("GetStatic #{index} {fcls} {fname}");
@@ -177,7 +188,10 @@ impl JVM {
                 ExecOpResult::Continue
             }
             Op::Return => ExecOpResult::PopFrame,
-            _ => ExecOpResult::Continue,
+            _ => {
+                println!("(op not implemented)");
+                ExecOpResult::Continue
+            }
         };
 
         Ok(res)
