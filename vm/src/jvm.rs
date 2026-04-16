@@ -16,30 +16,32 @@ pub struct JVM {
 
 #[derive(Debug)]
 pub struct JThreadContext {
-    stack: Vec<JValue>,
+    stack: Vec<u32>,
     frames: Vec<JStackFrame>,
 }
 
 impl JThreadContext {
-    pub const DEFAULT_STACK: usize = 1024;
-    pub const MAX_STACK: usize = 1024;
-    pub const DEFAULT_FRAME: usize = Self::DEFAULT_STACK / 8;
+    pub const DEFAULT_STACK: u32 = 1024;
+    pub const MAX_STACK: u32 = 1024;
+    pub const DEFAULT_FRAME: u32 = Self::DEFAULT_STACK / 8;
 }
 
 impl Default for JThreadContext {
     fn default() -> Self {
         Self {
-            stack: Vec::with_capacity(Self::DEFAULT_STACK),
-            frames: Vec::with_capacity(Self::DEFAULT_FRAME),
+            stack: Vec::with_capacity(Self::DEFAULT_STACK as usize),
+            frames: Vec::with_capacity(Self::DEFAULT_FRAME as usize),
         }
     }
 }
 
 #[derive(Debug)]
 struct JStackFrame {
-    bp: u32,
-    stack: u32,
-    local: u32,
+    /// Range in [JThreadContext] stack. (size = max_locals + max_stack)
+    range: std::ops::Range<u32>,
+    /// Operand stack top. (initial = max_locals)
+    sp: u32,
+    /// Program counter.
     pc: u32,
     class: Rc<JClass>,
     method: Rc<MethodInfo>,

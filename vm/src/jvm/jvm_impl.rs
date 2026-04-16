@@ -127,7 +127,7 @@ impl JVM {
 
     fn run_internal(
         &mut self,
-        stack: &mut Vec<JValue>,
+        stack: &mut Vec<u32>,
         frame: &mut JStackFrame,
     ) -> anyhow::Result<ExecOpResult> {
         let result = loop {
@@ -209,20 +209,25 @@ impl JThreadContext {
         } else {
             anyhow::bail!("no code");
         };
-        let stack = code.max_locals as u32;
-        let local = code.max_stack as u32;
-        let bp = self.stack.len() as u32;
 
-        let stack_consume = stack.saturating_add(local) as usize;
+        let max_locals = code.max_locals as u32;
+        let max_stack = code.max_stack as u32;
+        let size = max_locals + max_stack;
+        let stack_consume = size as usize;
+        let base = self.stack.len() as u32;
         anyhow::ensure!(
-            self.stack.len() + stack_consume <= Self::MAX_STACK,
+            self.stack.len() + stack_consume <= Self::MAX_STACK as usize,
             "stack overflow"
         );
+        let top = base + size;
 
+        self.stack.resize(self.stack.len() + stack_consume, 0);
         self.frames.push(JStackFrame {
-            bp,
-            stack,
-            local,
+            range: std::ops::Range {
+                start: base,
+                end: top,
+            },
+            sp: max_locals,
             pc: 0,
             class,
             method,
