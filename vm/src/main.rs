@@ -33,13 +33,14 @@ fn test_dump_method(vm: &jvm::JVM, cls: &str, method: &str) -> anyhow::Result<()
     Ok(())
 }
 
-fn run_main(vm: &mut jvm::JVM, cls: &str) -> anyhow::Result<()> {
+fn run_main(vm: &mut jvm::JVM, cls: &str, args: &[String]) -> anyhow::Result<()> {
     let main_class = vm.get_class(cls)?;
     let method = main_class.get_method("main([Ljava/lang/String;)V")?;
     println!("Invoke {cls}.main(String[] args)");
 
     let mut th = JThreadContext::default();
-    vm.invoke_static(&mut th, main_class, method)?;
+    let args = vm.string_array(args)?;
+    vm.invoke_static(&mut th, main_class, method, &[args])?;
     vm.run(&mut th)?;
 
     Ok(())
@@ -59,7 +60,12 @@ fn main() -> anyhow::Result<()> {
     //test_dump_method(&jvm, "MasaoConstruction", "<init>()V")?;
     //test_dump_method(&jvm, "Hello", "main([Ljava/lang/String;)V")?;
 
-    run_main(&mut jvm, "Hello")?;
+    jvm.bind_native("Hello", "println(Ljava/lang/String;)V", |vm, args| {
+        println!("{}", vm.get_string(args[0])?);
+        Ok(())
+    });
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    run_main(&mut jvm, "Hello", &args)?;
 
     Ok(())
 }

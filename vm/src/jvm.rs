@@ -12,7 +12,18 @@ pub use stdlib::load_core as stdlib_load_core;
 pub struct JVM {
     classes: HashMap<String, Rc<JClass>>,
     class_rt: HashMap<String, JClassRuntimeInfo>,
+    /// Interned string references. Zero is reserved for null.
+    strings: HashMap<Rc<String>, u32>,
+    heap: Vec<HeapObject>,
+    native_methods: HashMap<(String, String), NativeBinding>,
 }
+
+enum HeapObject {
+    String(Rc<String>),
+    ReferenceArray(Vec<u32>),
+}
+
+type NativeBinding = Rc<dyn Fn(&mut JVM, &[u32]) -> anyhow::Result<()>>;
 
 #[derive(Debug)]
 pub struct JThreadContext {

@@ -6,6 +6,9 @@ impl JVM {
         Self {
             classes: Default::default(),
             class_rt: Default::default(),
+            strings: Default::default(),
+            heap: Vec::new(),
+            native_methods: HashMap::new(),
         }
     }
 
@@ -90,39 +93,108 @@ impl JVM {
         Ok(v.clone())
     }
 
+    fn allocate(&mut self, object: HeapObject) -> anyhow::Result<u32> {
+        let reference = u32::try_from(self.heap.len())?
+            .checked_add(1)
+            .context("heap reference overflow")?;
+        self.heap.push(object);
+        Ok(reference)
+    }
+
+    fn object(&self, reference: u32) -> anyhow::Result<&HeapObject> {
+        let index = reference.checked_sub(1).context("null reference")?;
+        self.heap
+            .get(index as usize)
+            .context("invalid heap reference")
+    }
+
+    pub fn intern_string(&mut self, text: Rc<String>) -> anyhow::Result<u32> {
+        if let Some(reference) = self.strings.get(&text) {
+            return Ok(*reference);
+        }
+        let reference = self.allocate(HeapObject::String(Rc::clone(&text)))?;
+        self.strings.insert(text, reference);
+        Ok(reference)
+    }
+
+    pub fn get_string(&self, reference: u32) -> anyhow::Result<&str> {
+        match self.object(reference)? {
+            HeapObject::String(text) => Ok(text.as_str()),
+            _ => anyhow::bail!("reference is not a string"),
+        }
+    }
+
+    pub fn string_array(&mut self, args: &[String]) -> anyhow::Result<u32> {
+        let elements = args
+            .iter()
+            .map(|arg| self.intern_string(Rc::new(arg.clone())))
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        self.allocate(HeapObject::ReferenceArray(elements))
+    }
+
+    pub fn bind_native<F>(&mut self, class: &str, method: &str, function: F)
+    where
+        F: Fn(&mut JVM, &[u32]) -> anyhow::Result<()> + 'static,
+    {
+        self.native_methods
+            .insert((class.into(), method.into()), Rc::new(function));
+    }
+
     pub fn invoke_static(
-        &self,
+        &mut self,
         th: &mut JThreadContext,
         cls: Rc<JClass>,
-        method: Rc<MethodInfo>, /* , args... */
+        method: Rc<MethodInfo>,
+        args: &[u32],
     ) -> anyhow::Result<()> {
-        th.new_frame(cls, method)?;
-
+        anyhow::ensure!(
+            method.access_flags & acc_method::STATIC != 0,
+            "method is not static"
+        );
+        anyhow::ensure!(
+            method.ret_type.is_none(),
+            "only void static calls are supported"
+        );
+        anyhow::ensure!(
+            method.param_types.iter().all(|t| t.array_dim > 0
+                || !matches!(t.ctype, JComponentType::Long | JComponentType::Double)),
+            "two-slot parameters are not supported"
+        );
+        anyhow::ensure!(
+            args.len() == method.param_types.len(),
+            "incorrect argument count"
+        );
+        if method.access_flags & acc_method::NATIVE != 0 {
+            let function = self
+                .native_methods
+                .get(&(cls.this_class.to_string(), method.name_desc.clone()))
+                .context("native method is not bound")?
+                .clone();
+            return function(self, args);
+        }
+        let frame = th.new_frame(cls, method)?;
+        anyhow::ensure!(
+            args.len() <= frame.sp as usize,
+            "arguments exceed max_locals"
+        );
+        let base = frame.range.start as usize;
+        th.stack[base..base + args.len()].copy_from_slice(args);
         Ok(())
     }
 
     pub fn run(&mut self, th: &mut JThreadContext) -> anyhow::Result<()> {
-        // tentatively pop the current frame to execute
-        let mut frame = th.pop_frame();
-
-        let result = self.run_internal(&mut th.stack, &mut frame);
-
-        // if return or err, do not restore the current frame (do pop)
-        let res = match result {
-            Ok(ExecOpResult::Continue) => {
-                th.push_frame(frame);
-                Ok(())
+        while let Some(mut frame) = th.frames.pop() {
+            let result = self.run_internal(&mut th.stack, &mut frame)?;
+            match result {
+                ExecOpResult::Continue => unreachable!(),
+                ExecOpResult::PopFrame => th.stack.truncate(frame.range.start as usize),
+                ExecOpResult::InvokeStatic(class, method, args) => {
+                    th.push_frame(frame);
+                    self.invoke_static(th, class, method, &args)?;
+                }
             }
-            Ok(ExecOpResult::PopFrame) => Ok(()),
-            Ok(ExecOpResult::PushFrame(new_frame)) => {
-                th.push_frame(frame);
-                th.push_frame(new_frame);
-                Ok(())
-            }
-            Err(e) => Err(e),
-        };
-
-        res
+        }
+        Ok(())
     }
 
     fn run_internal(
@@ -130,26 +202,36 @@ impl JVM {
         stack: &mut Vec<u32>,
         frame: &mut JStackFrame,
     ) -> anyhow::Result<ExecOpResult> {
-        let result = loop {
+        loop {
             let code = match &frame.method.method_body {
-                MethodBody::None => anyhow::bail!("no code"),
-                MethodBody::Native(_func) => unimplemented!("native call"),
                 MethodBody::Java(code) => &code.code,
+                _ => anyhow::bail!("method has no executable Java code"),
             };
-
-            // fetch the next op
-            let (op, len) = next_op(&code[frame.pc as usize..])?;
-            println!("[{}] {:?}", frame.pc, op);
+            let pc = frame.pc;
+            let (op, len) = next_op(code.get(pc as usize..).context("invalid pc")?)?;
+            println!("[{pc}] {op:?}");
             frame.pc += len as u32;
-
-            let result = self.exec_op(frame, op)?;
-            // TODO: make a chance to preempt during normal execution
+            // Branch offsets are relative to the opcode, not the following instruction.
+            let op = match op {
+                op::Op::Goto { branch } => {
+                    frame.branch(pc, branch)?;
+                    continue;
+                }
+                op::Op::IfIcmpge { branch } => {
+                    let right = frame.pop(stack)? as i32;
+                    let left = frame.pop(stack)? as i32;
+                    if left >= right {
+                        frame.branch(pc, branch)?;
+                    }
+                    continue;
+                }
+                op => op,
+            };
+            let result = self.exec_op(stack, frame, op)?;
             if !matches!(result, ExecOpResult::Continue) {
-                break result;
+                return Ok(result);
             }
-        };
-
-        Ok(result)
+        }
     }
 }
 
@@ -158,43 +240,153 @@ enum ExecOpResult {
     /// Return from the method.
     PopFrame,
     /// Invoke a new method.
-    PushFrame(JStackFrame),
+    InvokeStatic(Rc<JClass>, Rc<MethodInfo>, Vec<u32>),
 }
 
 impl JVM {
-    fn exec_op(&mut self, frame: &mut JStackFrame, op: op::Op) -> anyhow::Result<ExecOpResult> {
+    fn exec_op(
+        &mut self,
+        stack: &mut [u32],
+        frame: &mut JStackFrame,
+        op: op::Op,
+    ) -> anyhow::Result<ExecOpResult> {
         use op::Op;
         let cls = &frame.class;
 
         let res = match op {
             Op::Ldc { index } => {
+                let top = frame.range.start + frame.sp;
+                anyhow::ensure!(top < frame.range.end, "operand stack overflow");
                 let value = frame.class.constant_pool.get(index as u16)?;
-                match value {
-                    ConstInfo::Integer { bytes } => todo!(),
-                    ConstInfo::Float { bytes } => todo!(),
-                    ConstInfo::String { string } => todo!(),
-                    _ => anyhow::bail!("Unknown runtime constant info: {value:?}"),
-                }
+                let slot = match value {
+                    ConstInfo::Integer { bytes } => *bytes as u32,
+                    ConstInfo::Float { bytes } => bytes.to_bits(),
+                    ConstInfo::String { string } => self.intern_string(Rc::clone(string))?,
+                    _ => anyhow::bail!("unsupported ldc constant: {value:?}"),
+                };
+                stack[top as usize] = slot;
+                frame.sp += 1;
 
                 ExecOpResult::Continue
             }
+            Op::Nop => ExecOpResult::Continue,
             Op::GetStatic { index } => {
-                let (fcls, fname, _fdesc) = cls.constant_pool.get_field(index)?;
-                println!("GetStatic #{index} {fcls} {fname}");
-
-                let v = self.get_static(&fcls, &fname)?;
-                println!("GetStatic: {v:?}");
-
+                let (class, name, _) = cls.constant_pool.get_field(index)?;
+                let slot = match self.get_static(&class, &name)? {
+                    JValue::Int(value) => value as u32,
+                    JValue::Float(value) => value.to_bits(),
+                    JValue::Null => 0,
+                    value => anyhow::bail!("unsupported static field value: {value:?}"),
+                };
+                frame.push(stack, slot)?;
                 ExecOpResult::Continue
+            }
+            Op::Iconst0 => {
+                frame.push(stack, 0)?;
+                ExecOpResult::Continue
+            }
+            Op::Aload0 | Op::Iload1 => {
+                let index = if matches!(op, Op::Aload0) { 0 } else { 1 };
+                let slot = frame.local(index)?;
+                frame.push(stack, stack[slot])?;
+                ExecOpResult::Continue
+            }
+            Op::Istore1 => {
+                let slot = frame.local(1)?;
+                stack[slot] = frame.pop(stack)?;
+                ExecOpResult::Continue
+            }
+            Op::Iinc { index, constant } => {
+                let slot = frame.local(index as u32)?;
+                stack[slot] = (stack[slot] as i32).wrapping_add(constant as i32) as u32;
+                ExecOpResult::Continue
+            }
+            Op::Arraylength => {
+                let reference = frame.pop(stack)?;
+                let HeapObject::ReferenceArray(elements) = self.object(reference)? else {
+                    anyhow::bail!("reference is not an array");
+                };
+                frame.push(stack, u32::try_from(elements.len())?)?;
+                ExecOpResult::Continue
+            }
+            Op::Aaload => {
+                let index = frame.pop(stack)? as i32;
+                let reference = frame.pop(stack)?;
+                let HeapObject::ReferenceArray(elements) = self.object(reference)? else {
+                    anyhow::bail!("reference is not a reference array");
+                };
+                let value = *elements
+                    .get(usize::try_from(index).context("negative array index")?)
+                    .context("array index out of bounds")?;
+                frame.push(stack, value)?;
+                ExecOpResult::Continue
+            }
+            Op::InvokeStatic { index } => {
+                let ConstInfo::Methodref {
+                    class,
+                    name,
+                    descriptor,
+                } = cls.constant_pool.get(index)?
+                else {
+                    anyhow::bail!("constant is not a method reference");
+                };
+                let target_class = self.get_class(class)?;
+                let method = target_class.get_method(&format!("{name}{descriptor}"))?;
+                let mut args = Vec::with_capacity(method.param_types.len());
+                for _ in &method.param_types {
+                    args.push(frame.pop(stack)?);
+                }
+                args.reverse();
+                ExecOpResult::InvokeStatic(target_class, method, args)
             }
             Op::Return => ExecOpResult::PopFrame,
-            _ => {
-                println!("(op not implemented)");
-                ExecOpResult::Continue
-            }
+            _ => anyhow::bail!("unimplemented instruction: {op:?}"),
         };
 
         Ok(res)
+    }
+}
+
+impl JStackFrame {
+    fn local(&self, index: u32) -> anyhow::Result<usize> {
+        let MethodBody::Java(code) = &self.method.method_body else {
+            anyhow::bail!("no Java code");
+        };
+        anyhow::ensure!(
+            index < code.max_locals as u32,
+            "invalid local variable index"
+        );
+        Ok((self.range.start + index) as usize)
+    }
+
+    fn push(&mut self, stack: &mut [u32], value: u32) -> anyhow::Result<()> {
+        let top = self.range.start + self.sp;
+        anyhow::ensure!(top < self.range.end, "operand stack overflow");
+        stack[top as usize] = value;
+        self.sp += 1;
+        Ok(())
+    }
+
+    fn pop(&mut self, stack: &[u32]) -> anyhow::Result<u32> {
+        let MethodBody::Java(code) = &self.method.method_body else {
+            anyhow::bail!("no Java code");
+        };
+        anyhow::ensure!(self.sp > code.max_locals as u32, "operand stack underflow");
+        self.sp -= 1;
+        Ok(stack[(self.range.start + self.sp) as usize])
+    }
+
+    fn branch(&mut self, pc: u32, offset: i16) -> anyhow::Result<()> {
+        let target = i64::from(pc) + i64::from(offset);
+        let MethodBody::Java(code) = &self.method.method_body else {
+            anyhow::bail!("no Java code");
+        };
+        anyhow::ensure!(
+            target >= 0 && target < code.code.len() as i64,
+            "invalid branch target"
+        );
+        self.pc = target as u32;
+        Ok(())
     }
 }
 
@@ -252,7 +444,188 @@ impl JClass {
     pub fn get_method(&self, name_desc: &str) -> anyhow::Result<Rc<MethodInfo>> {
         self.methods
             .get(name_desc)
-            .context("method {name_desc} not found")
+            .with_context(|| format!("method {name_desc} not found"))
             .map(Rc::clone)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hello_runs_with_empty_and_multiple_arguments() {
+        use std::cell::RefCell;
+        for args in [vec![], vec!["first".to_string(), "日本語".to_string()]] {
+            let mut vm = JVM::new();
+            vm.load_class(crate::res::SAMPLE_CLASS_FILES[0]).unwrap();
+            let output = Rc::new(RefCell::new(Vec::new()));
+            let captured = Rc::clone(&output);
+            vm.bind_native("Hello", "println(Ljava/lang/String;)V", move |vm, args| {
+                captured
+                    .borrow_mut()
+                    .push(vm.get_string(args[0])?.to_string());
+                Ok(())
+            });
+            let reference = vm.string_array(&args).unwrap();
+            let class = vm.get_class("Hello").unwrap();
+            let method = class.get_method("main([Ljava/lang/String;)V").unwrap();
+            let mut thread = JThreadContext::default();
+            vm.invoke_static(&mut thread, class, method, &[reference])
+                .unwrap();
+            vm.run(&mut thread).unwrap();
+            let mut expected = vec!["Hello, world!".to_string()];
+            expected.extend(args);
+            assert_eq!(*output.borrow(), expected);
+            assert!(thread.frames.is_empty());
+            assert!(thread.stack.is_empty());
+        }
+    }
+
+    #[test]
+    fn heap_references_are_shared_by_strings_and_arrays() {
+        let mut vm = JVM::new();
+        let array = vm.string_array(&[]).unwrap();
+        let text = vm.intern_string(Rc::new("hello".into())).unwrap();
+        assert_ne!(array, text);
+        assert_eq!(vm.get_string(text).unwrap(), "hello");
+        assert!(vm.get_string(array).is_err());
+        assert!(vm.get_string(0).is_err());
+        assert!(vm.get_string(u32::MAX).is_err());
+        assert_eq!(vm.intern_string(Rc::new("hello".into())).unwrap(), text);
+    }
+
+    #[test]
+    fn java_static_call_resumes_caller_and_reclaims_stack() {
+        let mut vm = JVM::new();
+        vm.load_class(crate::res::SAMPLE_CLASS_FILES[0]).unwrap();
+        let class = vm.classes.get_mut("Hello").unwrap();
+        let class = Rc::get_mut(class).unwrap();
+        // Replace the native println with a Java void method. Hello.main then
+        // exercises Java frame creation, argument transfer and return to caller.
+        let method = class
+            .methods
+            .get_mut("println(Ljava/lang/String;)V")
+            .unwrap();
+        let method = Rc::get_mut(method).unwrap();
+        method.access_flags &= !acc_method::NATIVE;
+        method.method_body = MethodBody::Java(Code {
+            max_stack: 1,
+            max_locals: 1,
+            code: vec![0x2a, 0xbe, 0xb1], // aload_0; arraylength; return
+            exception_table: vec![],
+        });
+        let main =
+            Rc::get_mut(class.methods.get_mut("main([Ljava/lang/String;)V").unwrap()).unwrap();
+        main.method_body = MethodBody::Java(Code {
+            max_stack: 1,
+            max_locals: 1,
+            // Pass local 0 to println and resume here after its return.
+            code: vec![0x2a, 0xb8, 0x00, 0x09, 0xb1],
+            exception_table: vec![],
+        });
+        let array = vm.string_array(&[]).unwrap();
+        let class = vm.get_class("Hello").unwrap();
+        let method = class.get_method("main([Ljava/lang/String;)V").unwrap();
+        let mut thread = JThreadContext::default();
+        vm.invoke_static(&mut thread, class, method, &[array])
+            .unwrap();
+        vm.run(&mut thread).unwrap();
+        assert!(thread.frames.is_empty());
+        assert!(thread.stack.is_empty());
+    }
+
+    fn frame(constants: Vec<ConstInfo>, max_stack: u16) -> (JThreadContext, JStackFrame) {
+        let mut class = parse::define_native_class("Test", None, HashMap::new(), HashMap::new());
+        class.constant_pool = ConstantPool { pool: constants };
+        let method = Rc::new(MethodInfo {
+            access_flags: acc_method::STATIC,
+            name: Rc::new("test".into()),
+            descriptor: Rc::new("()V".into()),
+            name_desc: "test()V".into(),
+            method_body: MethodBody::Java(Code {
+                max_stack,
+                max_locals: 1,
+                code: vec![],
+                exception_table: vec![],
+            }),
+            ret_type: None,
+            param_types: vec![],
+        });
+        let mut thread = JThreadContext::default();
+        // Leave an older frame on the stack to test nonzero frame offsets.
+        let class = Rc::new(class);
+        thread
+            .new_frame(Rc::clone(&class), Rc::clone(&method))
+            .unwrap();
+        thread.new_frame(class, method).unwrap();
+        let frame = thread.pop_frame();
+        (thread, frame)
+    }
+
+    #[test]
+    fn ldc_numeric_slots() {
+        let mut vm = JVM::new();
+        let (mut thread, mut frame) = frame(
+            vec![
+                ConstInfo::None,
+                ConstInfo::Integer { bytes: -123 },
+                ConstInfo::Float { bytes: -0.0 },
+            ],
+            2,
+        );
+        for index in [1, 2] {
+            vm.exec_op(&mut thread.stack, &mut frame, op::Op::Ldc { index })
+                .unwrap();
+        }
+        let base = frame.range.start as usize;
+        assert_eq!(frame.sp, 3);
+        assert!(thread.stack[..base + 1].iter().all(|slot| *slot == 0));
+        assert_eq!(thread.stack[base + 1] as i32, -123);
+        assert_eq!(thread.stack[base + 2], (-0.0f32).to_bits());
+        assert!(
+            vm.exec_op(&mut thread.stack, &mut frame, op::Op::Ldc { index: 1 })
+                .is_err()
+        );
+        assert_eq!(frame.sp, 3);
+    }
+
+    #[test]
+    fn ldc_interns_strings_across_classes() {
+        let mut vm = JVM::new();
+        let mut references = Vec::new();
+        for text in ["Hello, world!", "Hello, world!", "other"] {
+            let (mut thread, mut frame) = frame(
+                vec![
+                    ConstInfo::None,
+                    ConstInfo::String {
+                        string: Rc::new(text.into()),
+                    },
+                ],
+                1,
+            );
+            vm.exec_op(&mut thread.stack, &mut frame, op::Op::Ldc { index: 1 })
+                .unwrap();
+            let reference = thread.stack[(frame.range.start + frame.sp - 1) as usize];
+            assert_ne!(reference, 0);
+            assert_eq!(vm.strings.get(&text.to_string()), Some(&reference));
+            references.push(reference);
+        }
+        assert_eq!(references[0], references[1]);
+        assert_ne!(references[0], references[2]);
+    }
+
+    #[test]
+    fn ldc_rejects_invalid_constants() {
+        let mut vm = JVM::new();
+        let (mut thread, mut frame) = frame(vec![ConstInfo::None], 1);
+        for index in [0, 1] {
+            assert!(
+                vm.exec_op(&mut thread.stack, &mut frame, op::Op::Ldc { index })
+                    .is_err()
+            );
+            assert_eq!(frame.sp, 1);
+            assert!(thread.stack.iter().all(|slot| *slot == 0));
+        }
     }
 }

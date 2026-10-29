@@ -356,7 +356,7 @@ pub fn next_op(bcode: &[u8]) -> anyhow::Result<(Op, usize)> {
         0x1b => Op::Iload1,
         0x2a => Op::Aload0,
         0x32 => Op::Aaload,
-        0x3c => Op::Astore1,
+        0x3c => Op::Istore1,
         0x84 => Op::Iinc {
             index: rest.try_get_u8().context("invalid op")?,
             constant: rest.try_get_i8().context("invalid op")?,
